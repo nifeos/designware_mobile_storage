@@ -1,0 +1,19 @@
+Falsifies `designware_mobile_storage::proofs::reset_and_the_card_clock_are_total_against_any_controller`.
+
+The defect: a target no divider reaches falls back to divider 0, the bypass, so a request for a
+rate below the slowest the controller has runs the card at the full 50 MHz instead.
+
+Expected to fail: `assert!(hertz <= target || hertz == slowest)`, at a target below 98 kHz.
+
+diff --git a/src/host_controller.rs b/src/host_controller.rs
+--- a/src/host_controller.rs
++++ b/src/host_controller.rs
+@@ -387,7 +387,7 @@
+     /// [`Error::ClockUpdate`] if the controller does not take either update; `BufferSize` is never
+     /// returned. A target no divider reaches runs at the slowest the controller has.
+     pub fn set_clock(&mut self, hertz: u32) -> Result<u32, Error> {
+-        let divider = clock_divider(self.base_hertz, hertz).unwrap_or(255);
++        let divider = clock_divider(self.base_hertz, hertz).unwrap_or(0);
+         self.registers.write(registers::CLOCK_ENABLE_REGISTER, 0);
+         self.registers.write(registers::CLOCK_SOURCE_REGISTER, 0);
+         self.registers

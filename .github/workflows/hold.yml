@@ -1,0 +1,9 @@
+name: architect hold
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+permissions:
+  pull-requests: read
+jobs:
+  hold:
+    uses: nifeos/crate-workflows/.github/workflows/hold.yml@cd1b484ac7d2588b451fe11495bb553027b4b353
