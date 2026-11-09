@@ -131,8 +131,21 @@ pub struct Identity {
     /// `CDETECT` as found: bit 0 clear means a card is present.
     #[doc(alias = "cdetect")]
     pub card_detect: u32,
-    /// `CONTROL_REGISTER`, `PWREN`, `CLKDIV`, `CLKENA` and `CTYPE` as the firmware left them.
-    pub firmware: [u32; 5],
+    /// `SDMMC_CTRL` in OpenBSD and FreeBSD, the control register, as the firmware left it.
+    #[doc(alias = "CTRL")]
+    pub host_control: u32,
+    /// `SDMMC_PWREN` in OpenBSD and FreeBSD, the power enable register, as the firmware left it.
+    #[doc(alias = "PWREN")]
+    pub power_enable: u32,
+    /// `SDMMC_CLKDIV` in OpenBSD and FreeBSD, the clock divider register, as the firmware left it.
+    #[doc(alias = "CLKDIV")]
+    pub clock_divider: u32,
+    /// `SDMMC_CLKENA` in OpenBSD and FreeBSD, the clock enable register, as the firmware left it.
+    #[doc(alias = "CLKENA")]
+    pub clock_enable: u32,
+    /// `SDMMC_CTYPE` in OpenBSD and FreeBSD, the card type register, as the firmware left it.
+    #[doc(alias = "CTYPE")]
+    pub card_type: u32,
 }
 
 /// How long a reset, a clock update or a command may take before the driver gives up. Generous:
@@ -242,13 +255,11 @@ impl<R: RegisterWindowAndClock> HostController<R> {
             user_identification: registers.read(registers::USER_IDENTIFICATION_REGISTER),
             queue_threshold: registers.read(registers::QUEUE_THRESHOLD_REGISTER),
             card_detect: registers.read(registers::CARD_DETECT_REGISTER),
-            firmware: [
-                registers.read(registers::CONTROL_REGISTER),
-                registers.read(registers::POWER_ENABLE_REGISTER),
-                registers.read(registers::CLOCK_DIVIDER_REGISTER),
-                registers.read(registers::CLOCK_ENABLE_REGISTER),
-                registers.read(registers::CARD_TYPE_REGISTER),
-            ],
+            host_control: registers.read(registers::CONTROL_REGISTER),
+            power_enable: registers.read(registers::POWER_ENABLE_REGISTER),
+            clock_divider: registers.read(registers::CLOCK_DIVIDER_REGISTER),
+            clock_enable: registers.read(registers::CLOCK_ENABLE_REGISTER),
+            card_type: registers.read(registers::CARD_TYPE_REGISTER),
         };
         if registers::queue_width_bytes(id.hardware_configuration) != Some(4) {
             return Err(Error::QueueWidth((id.hardware_configuration >> 7) & 7));
@@ -781,6 +792,27 @@ mod tests {
         receiver
             .recv_timeout(Duration::from_secs(10))
             .expect("the driver neither returned nor gave up: a deadline never fired")
+    }
+
+    /// Each register the firmware left lands in its own named field of the identity.
+    #[test]
+    fn the_identity_names_each_register_the_firmware_left() {
+        let mut simulator = SimulatedHostController::new(CardKind::Empty, 1, 32);
+        for (offset, value) in [
+            (registers::CONTROL_REGISTER, 0x0200_0010),
+            (registers::POWER_ENABLE_REGISTER, 0x1),
+            (registers::CLOCK_DIVIDER_REGISTER, 0x3f),
+            (registers::CLOCK_ENABLE_REGISTER, 0x1_0001),
+            (registers::CARD_TYPE_REGISTER, 0x1),
+        ] {
+            simulator.write(offset, value);
+        }
+        let (_, id) = HostController::new(simulator, 50_000_000, Some(32)).unwrap();
+        assert_eq!(id.host_control, 0x0200_0010);
+        assert_eq!(id.power_enable, 0x1);
+        assert_eq!(id.clock_divider, 0x3f);
+        assert_eq!(id.clock_enable, 0x1_0001);
+        assert_eq!(id.card_type, 0x1);
     }
 
     #[test]
