@@ -72,7 +72,7 @@ impl DirectMemoryAccessRegion for NoDirectMemoryAccess {
 
 /// A page: the descriptor chain's size, and the most one descriptor's buffer holds here. The
 /// databook's field holds 8191 bytes; a page keeps each buffer inside one page of the region.
-pub(crate) const PAGE_BYTES: u32 = 4096;
+pub const PAGE_BYTES: u32 = 4096;
 /// One 32-bit-address descriptor: four words.
 pub(crate) const DESCRIPTOR_BYTES: u32 = 16;
 /// The most descriptors the chain page holds, and so the most data pages a region may have.
