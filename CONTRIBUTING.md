@@ -16,8 +16,11 @@ and does not need to say which.
 
 ## What the gates will ask of a change
 
-- The crate stays `no_std`-friendly, dual licensed `MIT OR Apache-2.0`, and free of vocabulary
-  from any other tree (the `standalone` job reads for it).
+- The crate stays `no_std`-friendly and free of vocabulary from any other tree (the `standalone`
+  job reads for it). Its license is `(MIT OR Apache-2.0) AND ISC`: a contribution is dual licensed
+  `MIT OR Apache-2.0`, and the parts adapted from OpenBSD's `dwmmc.c` keep their ISC notice, which
+  `LICENSE-ISC` holds. Code adapted from another permissive source carries that source's notice the
+  same way; GPL code is never copied.
 - A proof harness carries a falsification patch, or a reason of at least 200 characters that it
   cannot.
 - A dependency new to the graph holds the pull request until a maintainer approves it, and so does a

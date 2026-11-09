@@ -18,8 +18,25 @@ use crate::registers;
 /// **The register window, and a clock**: everything the driver needs from the machine.
 ///
 /// A kernel implements it over a mapped device window and the architecture's counter; the tests
-/// implement it over `simulator`. Rule 2 in one trait: the driver is handed a window and knows
-/// nothing about where it is.
+/// implement it over `simulator`. The driver is handed a window and knows nothing about where it
+/// is.
+///
+/// # Contract
+///
+/// - Each [`read`](Self::read) and [`write`](Self::write) is one 32-bit access at the window's base
+///   plus `offset`, made when the call is made: never merged with another, split, repeated, dropped,
+///   or reordered against any other access to the window. A read of the data FIFO's offset takes a
+///   word out of the FIFO, and several writes start the controller, so an access the compiler or
+///   the bus merges or drops loses a word or a command. Volatile accesses to a device mapping meet
+///   this.
+/// - Every `offset` the driver passes is a multiple of 4 below
+///   [`USED_REGISTER_WINDOW_BYTES`](crate::registers::USED_REGISTER_WINDOW_BYTES).
+/// - The window orders its own accesses. Ordering them against the DMA region's is
+///   [`DirectMemoryAccessRegion::barrier`]'s job, which the driver calls where it matters.
+/// - [`now_microseconds`](Self::now_microseconds) counts microseconds from any fixed point and may
+///   wrap past `u64::MAX`; the driver uses only wrapping differences. It must keep advancing:
+///   every wait ends only when the clock passes its deadline, so a clock that stands still hangs
+///   the wait.
 pub trait RegisterWindowAndClock {
     /// Read the 32-bit register at `offset` bytes from the base.
     fn read(&mut self, offset: u32) -> u32;
@@ -63,7 +80,7 @@ pub enum Error {
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::QueueWidth(width) => write!(f, "unsupported queue width field {width}"),
+            Self::QueueWidth(width) => write!(f, "unsupported FIFO width field {width}"),
             Self::ResetStuck(word) => write!(f, "a reset bit did not clear (read {word:#x})"),
             Self::ClockUpdate => f.write_str("the controller did not take a clock update"),
             Self::CommandNotTaken(index) => write!(f, "command {index} was not taken"),
