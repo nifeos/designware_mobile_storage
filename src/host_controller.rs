@@ -132,19 +132,8 @@ pub(crate) const DATA_DEADLINE_MICROSECONDS: u64 = 500_000;
 ///
 /// OpenBSD's loop, with its edge closed: OpenBSD exits at `div = 256` and writes that to an
 /// eight-bit field, which reads back as 0, the fastest setting there is.
-///
-/// ```
-/// use designware_mobile_storage::host_controller::{clock_divider, card_clock_hertz};
-///
-/// // the VisionFive 2's controllers run from 50 megahertz (`assigned-clock-rates` in mainline and the vendor branch head).
-/// let d = clock_divider(50_000_000, 400_000).unwrap();
-/// assert_eq!(d, 63);
-/// assert!(card_clock_hertz(50_000_000, d) <= 400_000);
-/// assert_eq!(clock_divider(50_000_000, 50_000_000), Some(0));
-/// assert_eq!(clock_divider(50_000_000, 25_000_000), Some(1));
-/// ```
 #[must_use]
-pub const fn clock_divider(base_hertz: u32, target_hertz: u32) -> Option<u8> {
+pub(crate) const fn clock_divider(base_hertz: u32, target_hertz: u32) -> Option<u8> {
     if target_hertz == 0 {
         return None;
     }
@@ -164,7 +153,7 @@ pub const fn clock_divider(base_hertz: u32, target_hertz: u32) -> Option<u8> {
 /// The card clock, in hertz, a divider gives: `base_hertz` at 0, `base_hertz / (2 * divider)`
 /// otherwise.
 #[must_use]
-pub const fn card_clock_hertz(base_hertz: u32, divider: u8) -> u32 {
+pub(crate) const fn card_clock_hertz(base_hertz: u32, divider: u8) -> u32 {
     if divider == 0 {
         base_hertz
     } else {
@@ -178,7 +167,12 @@ pub const fn card_clock_hertz(base_hertz: u32, divider: u8) -> u32 {
 /// confused `STATUS_REGISTER` cannot make a write overrun the FIFO.
 #[doc(alias = "fifo")]
 #[must_use]
-pub const fn queue_step(status: u32, depth_words: u32, write: bool, remaining_bytes: u32) -> u32 {
+pub(crate) const fn queue_step(
+    status: u32,
+    depth_words: u32,
+    write: bool,
+    remaining_bytes: u32,
+) -> u32 {
     let filled = registers::queue_count(status);
     let filled = if filled > depth_words {
         depth_words
@@ -278,14 +272,8 @@ impl<R: RegisterWindowAndClock> HostController<R> {
 }
 
 impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D> {
-    /// The FIFO depth in 32-bit words, as decided by [`HostController::new`].
-    #[doc(alias = "fifo")]
-    #[must_use]
-    pub fn queue_depth_words(&self) -> u32 {
-        self.depth
-    }
-
-    /// The window, for a caller that needs a register this driver does not name.
+    /// The window, for a caller that reads or writes a register this driver does not drive, at
+    /// an offset the caller names.
     pub fn registers_mut(&mut self) -> &mut R {
         &mut self.registers
     }
@@ -687,6 +675,17 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `VisionFive` 2's controllers run from 50 megahertz (`assigned-clock-rates` in mainline
+    /// and the vendor branch head).
+    #[test]
+    fn the_identification_and_transfer_dividers_from_50_megahertz() {
+        let d = clock_divider(50_000_000, 400_000).unwrap();
+        assert_eq!(d, 63);
+        assert!(card_clock_hertz(50_000_000, d) <= 400_000);
+        assert_eq!(clock_divider(50_000_000, 50_000_000), Some(0));
+        assert_eq!(clock_divider(50_000_000, 25_000_000), Some(1));
+    }
 
     #[test]
     fn the_divider_never_runs_the_card_faster_than_asked() {

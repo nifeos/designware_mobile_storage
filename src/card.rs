@@ -58,7 +58,7 @@ pub const R1_STATE_TRANSFER: u32 = 4;
 /// **Bits `[start, start + width_bits)` of a 128-bit register** held as four words, low word first.
 /// `width_bits` above 32 is clamped to 32; positions past bit 127 read as zero.
 #[must_use]
-pub const fn extract_bits(register: &[u32; 4], start: u32, width_bits: u32) -> u32 {
+pub(crate) const fn extract_bits(register: &[u32; 4], start: u32, width_bits: u32) -> u32 {
     let width_bits = if width_bits > 32 { 32 } else { width_bits };
     if width_bits == 0 || start >= 128 {
         return 0;
@@ -81,27 +81,19 @@ pub const fn extract_bits(register: &[u32; 4], start: u32, width_bits: u32) -> u
 /// Physical Layer Simplified Specification section 5.3, `JESD84-B51` section 7.3 for eMMC.
 #[doc(alias = "csd")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CardSpecificData {
+pub(crate) struct CardSpecificData {
     /// The structure version, bits 127:126: 0 standard capacity, 1 high or extended capacity
     /// (SDHC and `SDXC`), 2 ultra capacity (`SDUC`). For eMMC it is a different field with different
     /// meaning; see [`CardSpecificData::from_sd_register`]'s caller.
-    pub structure: u32,
+    pub(crate) structure: u32,
     /// Capacity in 512-byte blocks, or 0 when the structure is one this driver does not decode.
-    pub blocks: u64,
+    pub(crate) blocks: u64,
 }
 
 impl CardSpecificData {
     /// **Decode an SD card's CSD.**
-    ///
-    /// ```
-    /// use designware_mobile_storage::card::CardSpecificData;
-    ///
-    /// // A 32 gigabytes SDHC card: structure 1, C_SIZE 60_947 (bits 69:48).
-    /// let csd = [0, 60_947u32 << 16, 0, 1 << 30];
-    /// assert_eq!(CardSpecificData::from_sd_register(&csd).blocks, 60_948 * 1024);
-    /// ```
     #[must_use]
-    pub const fn from_sd_register(register: &[u32; 4]) -> CardSpecificData {
+    pub(crate) const fn from_sd_register(register: &[u32; 4]) -> CardSpecificData {
         let structure = extract_bits(register, 126, 2);
         let blocks = match structure {
             // (C_SIZE + 1) * 2^(C_SIZE_MULT + 2) blocks of 2^READ_BL_LEN bytes. READ_BL_LEN is 9,
@@ -161,7 +153,7 @@ pub struct CardIdentification {
 impl CardIdentification {
     /// Decode an SD card's CID.
     #[must_use]
-    pub const fn from_sd_register(register: &[u32; 4]) -> CardIdentification {
+    pub(crate) const fn from_sd_register(register: &[u32; 4]) -> CardIdentification {
         let mut name = [0u8; 6];
         let mut i = 0;
         while i < 5 {
@@ -206,6 +198,16 @@ pub(crate) fn extended_card_specific_data_sectors(extended_card_specific_data: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 32 gigabytes SDHC card: structure 1, `C_SIZE` (bits 69:48) `60_947`.
+    #[test]
+    fn a_32_gigabyte_high_capacity_card_specific_data() {
+        let csd = [0, 60_947u32 << 16, 0, 1 << 30];
+        assert_eq!(
+            CardSpecificData::from_sd_register(&csd).blocks,
+            60_948 * 1024
+        );
+    }
 
     fn put(r: &mut [u32; 4], start: u32, len: u32, v: u32) {
         for i in 0..len {

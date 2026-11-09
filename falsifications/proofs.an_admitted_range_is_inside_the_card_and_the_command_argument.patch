@@ -10,7 +10,7 @@ blocks and a logical block address at or past 8 Mi.
 diff --git a/src/sd.rs b/src/sd.rs
 --- a/src/sd.rs
 +++ b/src/sd.rs
-@@ -508,11 +508,8 @@
+@@ -520,11 +520,8 @@
      if count == 0 || end > card_blocks {
          return false;
      }
@@ -23,4 +23,4 @@ diff --git a/src/sd.rs b/src/sd.rs
 +    end <= 1 << 32
  }
  
- fn data_command(card: &Card, logical_block_address: u64, blocks: u32, write: bool) -> Command {
+ fn data_command(argument: u32, blocks: u32, write: bool) -> Command {
