@@ -68,10 +68,12 @@ pub enum InitializationError {
     Identify(u8, Error),
     /// The CSD decoded to no capacity: its structure field.
     Capacity(u32),
-    /// Bus width, block length, `EXT_CSD` or the transfer clock failed.
+    /// Bus width, block length or `EXT_CSD` failed: the command and the error.
     Configure(u8, Error),
     /// A command's R1 status reported an error: the command and the status.
     Status(u8, u32),
+    /// The controller did not take the change to the transfer clock.
+    TransferClock(Error),
 }
 
 impl core::fmt::Display for InitializationError {
@@ -93,6 +95,7 @@ impl core::fmt::Display for InitializationError {
             Self::Status(index, status) => {
                 write!(f, "CMD{index} reported a card error (status {status:#x})")
             }
+            Self::TransferClock(e) => write!(f, "the transfer clock would not start: {e}"),
         }
     }
 }
@@ -338,7 +341,7 @@ pub(crate) fn configure_multimedia_card<R: RegisterWindowAndClock, D: DirectMemo
     // The clock first: EXT_CSD is 512 bytes, and at 400 kHz on one line that is 10 ms.
     card.clock_hertz = host
         .set_clock(TRANSFER_HERTZ)
-        .map_err(|e| InitializationError::Configure(command::SEND_INTERFACE_CONDITION, e))?;
+        .map_err(InitializationError::TransferClock)?;
     let mut extended_card_specific_data = [0u8; BLOCK_BYTES];
     let command = Command::with_data(
         command::SEND_INTERFACE_CONDITION,
@@ -394,7 +397,7 @@ pub(crate) fn configure_sd<R: RegisterWindowAndClock, D: DirectMemoryAccessRegio
     r1_ok(command::SET_BLOCK_LENGTH, r1[0])?;
     card.clock_hertz = host
         .set_clock(TRANSFER_HERTZ)
-        .map_err(|e| InitializationError::Configure(command::SET_BLOCK_LENGTH, e))?;
+        .map_err(InitializationError::TransferClock)?;
     Ok(())
 }
 

@@ -457,6 +457,23 @@ fn each_configuration_step_names_itself_when_the_card_goes_silent() {
     );
 }
 
+/// A transfer clock the controller does not take is reported as that, not as the command the
+/// step before it sent: two clock updates set the identification clock, and the next two the
+/// transfer clock.
+#[test]
+fn a_transfer_clock_that_is_not_taken_names_the_clock() {
+    for (kind, width) in [(CardKind::SdHighCapacity, 4), (CardKind::MultimediaCard, 8)] {
+        let mut simulator = SimulatedHostController::new(kind, 16_384, 32);
+        simulator.clock_updates_taken = Some(2);
+        let (mut h, _) = HostController::new(simulator, 50_000_000, None).unwrap();
+        assert_eq!(
+            sd::identify(&mut h, width),
+            Err(InitializationError::TransferClock(Error::ClockUpdate)),
+            "{kind:?}"
+        );
+    }
+}
+
 #[test]
 fn an_error_bit_in_a_status_answer_stops_identification_at_that_command() {
     let mut h = faulty(

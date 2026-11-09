@@ -650,6 +650,94 @@ fn a_queue_transfer_stays_inside_its_buffer() {
     assert!(result != Err(Error::BufferSize));
 }
 
+/// **The adversarial window, watching for a stop**: every read is the solver's, as in
+/// [`AdversarialWindowAndRunningClock`], and the window records whether the driver sent `CMD12`
+/// and the last `RINTSTS` word it was shown.
+struct StopWatchingWindow {
+    inner: AdversarialWindowAndRunningClock,
+    stop_sent: bool,
+    last_raw_interrupt_status: u32,
+}
+
+impl RegisterWindowAndClock for StopWatchingWindow {
+    fn read(&mut self, offset: u32) -> u32 {
+        let value: u32 = kani::any();
+        if offset == crate::registers::RAW_INTERRUPT_STATUS_REGISTER {
+            self.last_raw_interrupt_status = value;
+        }
+        value
+    }
+
+    fn write(&mut self, offset: u32, value: u32) {
+        use crate::registers::{
+            COMMAND_REGISTER, COMMAND_START, COMMAND_UPDATE_CLOCK_REGISTERS_ONLY,
+        };
+        if offset == COMMAND_REGISTER
+            && value & COMMAND_START != 0
+            && value & COMMAND_UPDATE_CLOCK_REGISTERS_ONLY == 0
+            && value & 0x3f == u32::from(crate::command::STOP_TRANSMISSION)
+        {
+            self.stop_sent = true;
+        }
+        self.inner.write(offset, value);
+    }
+
+    fn now_microseconds(&mut self) -> u64 {
+        self.inner.now_microseconds()
+    }
+}
+
+/// Falsification: replayable `falsifications/proofs.a_failed_multiple_block_data_phase_is_stopped.patch`
+/// **A multiple-block data phase that fails is stopped**: whatever the controller reports, when
+/// `read_data` or `write_data` of a two-block command through the FIFO ends in a data-phase error,
+/// the driver has sent `CMD12`, unless the last `RINTSTS` word it read said the controller's
+/// automatic stop was done. A card left in its sending or receiving state answers nothing else.
+///
+#[kani::proof]
+#[kani::unwind(6)]
+fn a_failed_multiple_block_data_phase_is_stopped() {
+    let depth: u32 = kani::any();
+    kani::assume((1..=2).contains(&depth));
+    let window = StopWatchingWindow {
+        inner: AdversarialWindowAndRunningClock::new(),
+        stop_sent: false,
+        last_raw_interrupt_status: 0,
+    };
+    let Ok((mut host, _identity)) = HostController::new(window, kani::any(), Some(depth)) else {
+        return;
+    };
+    let write: bool = kani::any();
+    let data = Data {
+        block_bytes: 4,
+        blocks: 2,
+        is_write: write,
+    };
+    let index = if write {
+        crate::command::WRITE_MULTIPLE_BLOCK
+    } else {
+        crate::command::READ_MULTIPLE_BLOCK
+    };
+    let command = Command::with_data(index, kani::any(), Response::R1, data);
+    let mut buffer = [0u8; 8];
+    let result = if write {
+        host.write_data(&command, &buffer)
+    } else {
+        host.read_data(&command, &mut buffer)
+    };
+    if matches!(
+        result,
+        Err(Error::Data(..) | Error::DataTimeout(..) | Error::DirectMemoryAccess(..))
+    ) {
+        let window = host.registers_mut();
+        assert!(
+            window.stop_sent
+                || window.last_raw_interrupt_status
+                    & crate::registers::RAW_INTERRUPT_AUTOMATIC_COMMAND_DONE
+                    != 0
+        );
+    }
+}
+
 /// A host whose data phases go through the IDMAC, over [`AdversarialRegion`].
 fn adversarial_direct_memory_access_host()
 -> HostController<AdversarialWindowAndRunningClock, AdversarialRegion> {

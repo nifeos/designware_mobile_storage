@@ -21,4 +21,4 @@ diff --git a/src/sd.rs b/src/sd.rs
 -    r1_ok(command::SET_BLOCK_LENGTH, r1[0])?;
      card.clock_hertz = host
          .set_clock(TRANSFER_HERTZ)
-         .map_err(|e| InitializationError::Configure(command::SET_BLOCK_LENGTH, e))?;
+         .map_err(InitializationError::TransferClock)?;

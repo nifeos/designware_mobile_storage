@@ -144,6 +144,10 @@ enum State {
     Identification,
     Standby,
     Transfer,
+    /// Sending the blocks of a `CMD18`, until `CMD12`.
+    SendingData,
+    /// Receiving the blocks of a `CMD25`, until `CMD12`.
+    ReceivingData,
 }
 
 #[derive(Debug)]
@@ -209,6 +213,10 @@ pub struct SimulatedHostController {
     pub reset_stuck: bool,
     /// The controller never takes a clock update: `CMD`'s start bit stays set.
     pub clock_stuck: bool,
+    /// This many clock updates are taken; every later one holds, as `clock_stuck` does.
+    pub clock_updates_taken: Option<u32>,
+    /// The next read's data phase ends in a read data timeout (`DRTO`).
+    pub fail_next_read_timeout: bool,
     /// The card holds `DAT0` low forever.
     pub busy_forever: bool,
     /// How many `RINTSTS` reads pass before a command's answer (`CD`, `RTO`, the response words)
@@ -295,6 +303,8 @@ impl SimulatedHostController {
             writes: Vec::new(),
             reset_stuck: false,
             clock_stuck: false,
+            clock_updates_taken: None,
+            fail_next_read_timeout: false,
             busy_forever: false,
             late_answer: 0,
             answer_pending: None,
@@ -357,6 +367,11 @@ impl SimulatedHostController {
         self.registers[(offset / 4) as usize]
     }
 
+    /// Set a register's value without the side effects of a write, as firmware might leave it.
+    pub fn poke(&mut self, offset: u32, value: u32) {
+        *self.register(offset) = value;
+    }
+
     fn register(&mut self, offset: u32) -> &mut u32 {
         &mut self.registers[(offset / 4) as usize]
     }
@@ -376,6 +391,8 @@ impl SimulatedHostController {
             State::Identification => 2,
             State::Standby => 3,
             State::Transfer => 4,
+            State::SendingData => 5,
+            State::ReceivingData => 6,
         };
         (state << 9)
             | (1 << 8)
@@ -499,10 +516,26 @@ impl SimulatedHostController {
             (6, true, _) | (16, false, _) | (13, false, _) if self.state == State::Transfer => {
                 short(self.r1())
             }
+            (13, false, _) if matches!(self.state, State::SendingData | State::ReceivingData) => {
+                short(self.r1())
+            }
+            (12, false, _) if matches!(self.state, State::SendingData | State::ReceivingData) => {
+                let r = self.r1();
+                self.state = State::Transfer;
+                short(r)
+            }
             (8, false, CardKind::MultimediaCard) | (17 | 18 | 24 | 25, false, _)
                 if self.state == State::Transfer =>
             {
-                short(self.r1())
+                let r = self.r1();
+                // A multiple-block command keeps the card sending or receiving until `CMD12`,
+                // whether the data phase ends well or not.
+                match index {
+                    18 => self.state = State::SendingData,
+                    25 => self.state = State::ReceivingData,
+                    _ => {}
+                }
+                short(r)
             }
             _ => None,
         }
@@ -663,6 +696,13 @@ impl SimulatedHostController {
                 self.fail_next_read_crc = false;
                 *self.register(registers::RAW_INTERRUPT_STATUS_REGISTER) |=
                     registers::RAW_INTERRUPT_DATA_CRC_ERROR
+                        | registers::RAW_INTERRUPT_DATA_TRANSFER_OVER;
+                return;
+            }
+            if self.fail_next_read_timeout && !t.extended_card_specific_data {
+                self.fail_next_read_timeout = false;
+                *self.register(registers::RAW_INTERRUPT_STATUS_REGISTER) |=
+                    registers::RAW_INTERRUPT_DATA_READ_TIMEOUT
                         | registers::RAW_INTERRUPT_DATA_TRANSFER_OVER;
                 return;
             }
@@ -859,6 +899,7 @@ impl SimulatedHostController {
         let mut raw_interrupt_status = registers::RAW_INTERRUPT_DATA_TRANSFER_OVER;
         if t.automatic_stop {
             self.commands.push((12, 0));
+            self.state = State::Transfer;
             if self.late_automatic_command_done > 0 {
                 self.automatic_command_done_pending = self.late_automatic_command_done;
             } else {
@@ -1000,8 +1041,9 @@ impl RegisterWindowAndClock for SimulatedHostController {
                 {
                     self.command(value);
                 }
-                let stuck =
-                    self.clock_stuck && value & registers::COMMAND_UPDATE_CLOCK_REGISTERS_ONLY != 0;
+                let is_clock_update = value & registers::COMMAND_UPDATE_CLOCK_REGISTERS_ONLY != 0;
+                let stuck = is_clock_update
+                    && (self.clock_stuck || Self::holds(&mut self.clock_updates_taken));
                 *self.register(registers::COMMAND_REGISTER) = if stuck {
                     value
                 } else {

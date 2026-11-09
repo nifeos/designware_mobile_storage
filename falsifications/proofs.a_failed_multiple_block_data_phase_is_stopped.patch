@@ -1,0 +1,20 @@
+Falsifies `designware_mobile_storage::proofs::a_failed_multiple_block_data_phase_is_stopped`.
+
+The defect: a multi-block data phase that fails leaves the card where it is. The card stays in
+its sending or receiving state, and the next command finds a card that answers nothing but
+`CMD12` and `CMD13`.
+
+Expected to fail: `assert!(window.stop_sent || ...)`, on a two-block read or write whose data phase
+the controller ends in an error with no automatic stop reported.
+
+diff --git a/src/host_controller.rs b/src/host_controller.rs
+--- a/src/host_controller.rs
++++ b/src/host_controller.rs
+@@ -802,7 +802,6 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
+                 & registers::RAW_INTERRUPT_AUTOMATIC_COMMAND_DONE
+                 == 0
+         {
+-            let _ = self.start_command(&Command::new(STOP_TRANSMISSION, 0, Response::R1b));
+             let _ = self.wait_not_busy();
+             let _ = self.reset_queue();
+         }
