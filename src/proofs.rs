@@ -728,7 +728,7 @@ fn writing_a_block_sends_only_the_block_asked_for() {
             logical_block_address,
             1
         ));
-        assert!(window.last_write.0 == card.block_address_argument(logical_block_address));
+        assert!(Some(window.last_write.0) == card.block_address_argument(logical_block_address));
         assert!(window.last_write.1 == crate::sd::BLOCK_BYTES as u32);
     }
 }

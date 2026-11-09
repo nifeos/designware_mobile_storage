@@ -8,12 +8,16 @@
 //!
 //! Only the first page matters to this driver: every register it touches, and the data FIFO, sit
 //! below `0x1000`. The JH7110's window is `0x1_0000`, the rest of it unused by anything here.
+//!
+//! The map is the driver's own: a caller drives the controller through
+//! [`crate::host_controller::HostController`], and needs from here only
+//! [`USED_REGISTER_WINDOW_BYTES`], how much of the window to map.
 
 /// **Control Register** (OpenBSD's `SDMMC_CTRL`): the three self-clearing resets, the interrupt and
 /// DMA enables.
 #[doc(alias = "control register")]
 #[doc(alias = "CTRL")]
-pub const CONTROL_REGISTER: u32 = 0x000;
+pub(crate) const CONTROL_REGISTER: u32 = 0x000;
 /// **Controller reset** (OpenBSD's `SDMMC_CTRL_CONTROLLER_RESET`): reset the controller's state
 /// machines. Self-clearing.
 #[doc(alias = "controller reset")]
@@ -142,7 +146,7 @@ pub(crate) const COMMAND_REGISTER: u32 = 0x02c;
 /// clears it when it has taken the command.
 #[doc(alias = "start command")]
 #[doc(alias = "CMD_START_CMD")]
-pub const COMMAND_START: u32 = 1 << 31;
+pub(crate) const COMMAND_START: u32 = 1 << 31;
 /// **Use hold register** (OpenBSD's `SDMMC_CMD_USE_HOLD_REG`): drive the command and data lines
 /// from the hold register (half a clock later). OpenBSD sets it on every command, on every `SoC` it
 /// supports, the JH7110 among them.
@@ -158,7 +162,7 @@ pub(crate) const COMMAND_UPDATE_CLOCK_REGISTERS_ONLY: u32 = 1 << 21;
 /// initialization sequence before this command. `CMD0` only.
 #[doc(alias = "send initialization")]
 #[doc(alias = "CMD_SEND_INITIALIZATION")]
-pub const COMMAND_SEND_INITIALIZATION: u32 = 1 << 15;
+pub(crate) const COMMAND_SEND_INITIALIZATION: u32 = 1 << 15;
 /// **Stop or abort command** (OpenBSD's `SDMMC_CMD_STOP_ABORT_CMD`): this command stops a data
 /// transfer in progress (`CMD12`).
 #[doc(alias = "stop or abort command")]
@@ -194,7 +198,7 @@ pub(crate) const COMMAND_LONG_RESPONSE: u32 = 1 << 7;
 /// **Response expect** (OpenBSD's `SDMMC_CMD_RESPONSE_EXPECT`): the command has a response.
 #[doc(alias = "response expected")]
 #[doc(alias = "CMD_RESPONSE_EXPECT")]
-pub const COMMAND_RESPONSE_EXPECT: u32 = 1 << 6;
+pub(crate) const COMMAND_RESPONSE_EXPECT: u32 = 1 << 6;
 
 /// **Response Register 0** (OpenBSD's `SDMMC_RESP0`): response word 0, bits 31:0 of a short
 /// response, or bits 31:0 of a long one.
@@ -322,7 +326,7 @@ pub(crate) const RAW_INTERRUPT_ALL_MASK: u32 = 0xffff;
 /// **Status Register** (OpenBSD's `SDMMC_STATUS`): FIFO count, busy, command state.
 #[doc(alias = "status register")]
 #[doc(alias = "STATUS")]
-pub const STATUS_REGISTER: u32 = 0x048;
+pub(crate) const STATUS_REGISTER: u32 = 0x048;
 /// **Data busy** (OpenBSD's `SDMMC_STATUS_DATA_BUSY`): the card is holding `DAT0` low (busy after a
 /// write or an R1b command).
 #[doc(alias = "data busy")]
@@ -398,20 +402,6 @@ pub(crate) const fn queue_threshold_receive_watermark(queue_threshold: u32) -> u
 #[doc(alias = "card detect register")]
 #[doc(alias = "CDETECT")]
 pub(crate) const CARD_DETECT_REGISTER: u32 = 0x050;
-/// **Write Protect Register** (OpenBSD's `SDMMC_WRTPRT`): active high, slot 0.
-#[doc(alias = "write protect register")]
-#[doc(alias = "WRTPRT")]
-pub const WRITE_PROTECT_REGISTER: u32 = 0x054;
-/// **Transferred `CIU` Card Byte Count Register** (OpenBSD's `SDMMC_TCBCNT`): bytes the card
-/// interface has moved in the current data phase.
-#[doc(alias = "transferred card byte count")]
-#[doc(alias = "TCBCNT")]
-pub const TRANSFERRED_CARD_BYTE_COUNT_REGISTER: u32 = 0x05c;
-/// **Transferred Host to `BIU`-FIFO Byte Count Register** (OpenBSD's `SDMMC_TBBCNT`): bytes moved
-/// between the host and the FIFO in the current data phase.
-#[doc(alias = "transferred host byte count")]
-#[doc(alias = "TBBCNT")]
-pub const TRANSFERRED_HOST_BYTE_COUNT_REGISTER: u32 = 0x060;
 /// **User ID Register** (OpenBSD's `SDMMC_USRID`): the integrator's user identifier, a free-form
 /// word.
 #[doc(alias = "user identifier register")]
@@ -427,22 +417,10 @@ pub(crate) const VERSION_IDENTIFICATION_REGISTER: u32 = 0x06c;
 #[doc(alias = "hardware configuration register")]
 #[doc(alias = "HCON")]
 pub(crate) const HARDWARE_CONFIGURATION_REGISTER: u32 = 0x070;
-/// **Ultra High Speed mode register** (OpenBSD's `SDMMC_UHS_REG`, databook `UHS_REG`, offset 0x74;
-/// Linux's `SDMMC_UHS_REG`): 1.8 V select and double data rate (DDR) mode per card. Per slot, DDR mode is bit 16 and
-/// 1.8 V signaling is bit 0.
-#[doc(alias = "uhs")]
-#[doc(alias = "ultra_high_speed")]
-#[doc(alias = "UHS_REG")]
-pub const ULTRA_HIGH_SPEED_REGISTER: u32 = 0x074;
-/// **Hardware Reset Register** (Linux's `SDMMC_RST_N`; OpenBSD writes `SDMMC_RST_n`): per-slot
-/// hardware reset line to an eMMC device, active low.
-#[doc(alias = "hardware reset register")]
-#[doc(alias = "RST_N")]
-pub const HARDWARE_RESET_REGISTER: u32 = 0x078;
 /// **Bus Mode Register** (OpenBSD's `SDMMC_BMOD`): the IDMAC's resets, burst mode and enable.
 #[doc(alias = "bus mode register")]
 #[doc(alias = "BMOD")]
-pub const BUS_MODE_REGISTER: u32 = 0x080;
+pub(crate) const BUS_MODE_REGISTER: u32 = 0x080;
 /// **Software reset** (OpenBSD's `SDMMC_BMOD_SWR`): reset the IDMAC's registers and state.
 /// Self-clearing.
 #[doc(alias = "software reset")]
@@ -478,7 +456,7 @@ pub(crate) const DESCRIPTOR_LIST_BASE_PHYSICAL_ADDRESS_REGISTER: u32 = 0x088;
 /// completion bits are `simulator`'s, and the tests'.
 #[doc(alias = "internal direct memory access status register")]
 #[doc(alias = "IDSTS")]
-pub const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER: u32 = 0x08c;
+pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER: u32 = 0x08c;
 /// **Transmit interrupt** (OpenBSD's `SDMMC_IDSTS_TI`): A descriptor without `DIC` finished a
 /// transmit (memory to card).
 #[cfg(test)]
@@ -531,16 +509,6 @@ pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ALL_MASK: u32 = 0x3ff;
 #[doc(alias = "internal direct memory access interrupt enable register")]
 #[doc(alias = "IDINTEN")]
 pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_INTERRUPT_ENABLE_REGISTER: u32 = 0x090;
-/// **Current Host Descriptor Address Register** (OpenBSD's `SDMMC_DSCADDR`): the descriptor the
-/// IDMAC is on, for a transcript after a failure.
-#[doc(alias = "current descriptor address")]
-#[doc(alias = "DSCADDR")]
-pub const CURRENT_DESCRIPTOR_PHYSICAL_ADDRESS_REGISTER: u32 = 0x094;
-/// **Current Buffer Descriptor Address Register** (OpenBSD's `SDMMC_BUFADDR`): the buffer address
-/// the IDMAC is on.
-#[doc(alias = "current buffer address")]
-#[doc(alias = "BUFADDR")]
-pub const CURRENT_BUFFER_PHYSICAL_ADDRESS_REGISTER: u32 = 0x098;
 /// **Card Threshold Control Register** (OpenBSD's `SDMMC_CARDTHRCTL`): hold a read until a block
 /// fits in the FIFO.
 #[doc(alias = "card threshold control register")]
@@ -565,7 +533,7 @@ pub(crate) const RELEASE_2_40A_VALUE: u32 = 0x240a;
 /// which applied.
 #[doc(alias = "fifo")]
 #[must_use]
-pub const fn queue_offset(version_identification: u32) -> u32 {
+pub(crate) const fn queue_offset(version_identification: u32) -> u32 {
     if version_identification & 0xffff < RELEASE_2_40A_VALUE {
         0x100
     } else {
@@ -579,7 +547,7 @@ pub const fn queue_offset(version_identification: u32) -> u32 {
 /// has not needed yet.
 #[doc(alias = "fifo")]
 #[must_use]
-pub const fn queue_width_bytes(hardware_configuration: u32) -> Option<u32> {
+pub(crate) const fn queue_width_bytes(hardware_configuration: u32) -> Option<u32> {
     match (hardware_configuration >> 7) & 0x7 {
         0 => Some(2),
         1 => Some(4),
@@ -591,7 +559,7 @@ pub const fn queue_width_bytes(hardware_configuration: u32) -> Option<u32> {
 /// **Does the IDMAC use 64-bit addresses?** `HCON` bit 27. Changes the layout of every register
 /// from `0x88` up and doubles the descriptor, so the IDMAC path refuses it; the `VisionFive` 2's is clear.
 #[must_use]
-pub const fn uses_64_bit_direct_memory_access(hardware_configuration: u32) -> bool {
+pub(crate) const fn uses_64_bit_direct_memory_access(hardware_configuration: u32) -> bool {
     hardware_configuration & (1 << 27) != 0
 }
 
@@ -757,8 +725,6 @@ mod tests {
                 INTERNAL_DIRECT_MEMORY_ACCESS_INTERRUPT_ENABLE_REGISTER,
                 0x90,
             ),
-            (CURRENT_DESCRIPTOR_PHYSICAL_ADDRESS_REGISTER, 0x94),
-            (CURRENT_BUFFER_PHYSICAL_ADDRESS_REGISTER, 0x98),
         ] {
             assert_eq!(bit, value);
         }
