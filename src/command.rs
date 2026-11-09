@@ -5,10 +5,14 @@
 //! an automatic `CMD12` after a multi-block transfer. The response kinds are the SD Physical Layer
 //! Simplified Specification's (section 4.9) and `JEDEC JESD84`'s for eMMC; which of them carry a
 //! cyclic redundancy check (CRC) is the spec's statement, and the R3 exception (the OCR register
-//! has no CRC, its CRC field reads as all ones) is why [`Response::has_crc`] exists.
+//! has no CRC, its CRC field reads as all ones) is why the command word asks the controller to check
+//! the CRC of every response but R3.
 //!
 //! The command constants keep the specifications' names: the SD specification's section 4.7.4 and
-//! `JESD84-B51`'s section 6.10.4. Each doc gives the command's number and what it does.
+//! `JESD84-B51`'s section 6.10.4. Each doc gives the command's number and what it does. Every one
+//! is public, so a caller composes the commands this driver does not send itself with
+//! [`Command::new`] or [`Command::with_data`] and sends them through
+//! [`crate::host_controller::HostController`].
 
 use crate::registers;
 
@@ -20,18 +24,18 @@ pub const GO_IDLE_STATE: u8 = 0;
 /// voltage and wait for power-up. The response is R3.
 #[doc(alias = "multimedia card operation conditions")]
 #[doc(alias = "SEND_OP_COND")]
-pub(crate) const SEND_OPERATION_CONDITIONS: u8 = 1;
+pub const SEND_OPERATION_CONDITIONS: u8 = 1;
 /// **`CMD2`, all send card identification** (`ALL_SEND_CID` in both specifications): the card's
 /// identity, 128 bits, as R2.
 #[doc(alias = "send card identification")]
 #[doc(alias = "ALL_SEND_CID")]
-pub(crate) const ALL_SEND_CARD_IDENTIFICATION: u8 = 2;
+pub const ALL_SEND_CARD_IDENTIFICATION: u8 = 2;
 /// **`CMD3`, send relative address** (the SD specification's `SEND_RELATIVE_ADDR`; `JESD84-B51` calls
 /// it `SET_RELATIVE_ADDR`): on SD the card picks its address and answers R6; on eMMC the host sets
 /// it and the card answers R1.
 #[doc(alias = "relative card address")]
 #[doc(alias = "SEND_RELATIVE_ADDR")]
-pub(crate) const SEND_RELATIVE_ADDRESS: u8 = 3;
+pub const SEND_RELATIVE_ADDRESS: u8 = 3;
 /// **`CMD6`, switch** (`JESD84-B51`'s `SWITCH`; the SD specification's `SWITCH_FUNC`, unused here):
 /// write one byte of `EXT_CSD` on an eMMC. The response is R1b.
 #[doc(alias = "switch mode")]
@@ -40,22 +44,22 @@ pub const SWITCH: u8 = 6;
 /// `MMC_SELECT_CARD` writes it): move the addressed card into the transfer state. The response is
 /// R1b.
 #[doc(alias = "select card")]
-pub(crate) const SELECT_CARD: u8 = 7;
+pub const SELECT_CARD: u8 = 7;
 /// **`CMD8`, send interface condition** (the SD specification's `SEND_IF_COND`; `JESD84-B51`'s
 /// `SEND_EXT_CSD`): on SD 2.0 and later, R7 echoing the voltage and check pattern; on eMMC, R1 and
 /// the 512-byte `EXT_CSD`. The same index with two meanings is how an eMMC is told from an SD card.
 #[doc(alias = "interface condition")]
 #[doc(alias = "SEND_IF_COND")]
-pub(crate) const SEND_INTERFACE_CONDITION: u8 = 8;
+pub const SEND_INTERFACE_CONDITION: u8 = 8;
 /// **`CMD9`, send card-specific data** (`SEND_CSD` in both specifications): the card's capacity and
 /// timing, 128 bits, as R2.
 #[doc(alias = "send card specific data")]
 #[doc(alias = "SEND_CSD")]
-pub(crate) const SEND_CARD_SPECIFIC_DATA: u8 = 9;
+pub const SEND_CARD_SPECIFIC_DATA: u8 = 9;
 /// **`CMD12`, stop transmission** (`STOP_TRANSMISSION` in both specifications): end a multiple-block
 /// transfer. The response is R1b.
 #[doc(alias = "stop transfer")]
-pub(crate) const STOP_TRANSMISSION: u8 = 12;
+pub const STOP_TRANSMISSION: u8 = 12;
 /// **`CMD13`, send status** (`SEND_STATUS` in both specifications): the card status word, as R1.
 #[doc(alias = "card status")]
 pub const SEND_STATUS: u8 = 13;
@@ -63,37 +67,37 @@ pub const SEND_STATUS: u8 = 13;
 /// standard-capacity card; high-capacity cards ignore it. The response is R1.
 #[doc(alias = "set block length")]
 #[doc(alias = "SET_BLOCKLEN")]
-pub(crate) const SET_BLOCK_LENGTH: u8 = 16;
+pub const SET_BLOCK_LENGTH: u8 = 16;
 /// **`CMD17`, read single block** (`READ_SINGLE_BLOCK` in both specifications): one block from the
 /// card. The response is R1.
 #[doc(alias = "read one block")]
-pub(crate) const READ_SINGLE_BLOCK: u8 = 17;
+pub const READ_SINGLE_BLOCK: u8 = 17;
 /// **`CMD18`, read multiple block** (`READ_MULTIPLE_BLOCK` in both specifications): blocks from the
 /// card until `CMD12`. The response is R1.
 #[doc(alias = "read blocks")]
-pub(crate) const READ_MULTIPLE_BLOCK: u8 = 18;
+pub const READ_MULTIPLE_BLOCK: u8 = 18;
 /// **`CMD24`, write block** (`WRITE_BLOCK` in both specifications): one block to the card. The
 /// response is R1.
 #[doc(alias = "write one block")]
-pub(crate) const WRITE_BLOCK: u8 = 24;
+pub const WRITE_BLOCK: u8 = 24;
 /// **`CMD25`, write multiple block** (`WRITE_MULTIPLE_BLOCK` in both specifications): blocks to the
 /// card until `CMD12`. The response is R1.
 #[doc(alias = "write blocks")]
-pub(crate) const WRITE_MULTIPLE_BLOCK: u8 = 25;
+pub const WRITE_MULTIPLE_BLOCK: u8 = 25;
 /// **`CMD55`, application command** (the SD specification's `APP_CMD`): the next command is
 /// application-specific (`ACMD`). The response is R1.
 #[doc(alias = "application command")]
 #[doc(alias = "APP_CMD")]
-pub(crate) const APPLICATION_COMMAND: u8 = 55;
+pub const APPLICATION_COMMAND: u8 = 55;
 /// **`ACMD6`, set bus width** (the SD specification's `SET_BUS_WIDTH`): the data bus width, 1 or 4
 /// bits. The response is R1.
 #[doc(alias = "bus width")]
-pub(crate) const SET_BUS_WIDTH: u8 = 6;
+pub const SET_BUS_WIDTH: u8 = 6;
 /// **`ACMD41`, SD send operation conditions** (`SD_SEND_OP_COND`, the SD specification): negotiate
 /// the voltage and capacity support and wait for power-up. The response is R3.
 #[doc(alias = "SD operation conditions")]
 #[doc(alias = "SD_SEND_OP_COND")]
-pub(crate) const SD_SEND_OPERATION_CONDITIONS: u8 = 41;
+pub const SD_SEND_OPERATION_CONDITIONS: u8 = 41;
 
 /// What comes back from the card, and so how the controller must be told to listen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +133,7 @@ pub enum Response {
 impl Response {
     /// Does the card send a CRC the controller can check? All but R3 and no response.
     #[must_use]
-    pub const fn has_crc(self) -> bool {
+    pub(crate) const fn has_crc(self) -> bool {
         !matches!(self, Response::None | Response::R3)
     }
 
@@ -157,7 +161,7 @@ impl Data {
     /// transfer; a caller asking for four gigabytes in one command is refused by [`crate::host_controller`]'s
     /// buffer check before this is ever written.
     #[must_use]
-    pub const fn total_bytes(&self) -> u32 {
+    pub(crate) const fn total_bytes(&self) -> u32 {
         self.block_bytes.saturating_mul(self.blocks)
     }
 }
@@ -189,12 +193,7 @@ impl Command {
 
     /// A command with a data phase.
     #[must_use]
-    pub(crate) const fn with_data(
-        index: u8,
-        argument: u32,
-        response: Response,
-        data: Data,
-    ) -> Self {
+    pub const fn with_data(index: u8, argument: u32, response: Response, data: Data) -> Self {
         Command {
             index,
             argument,
@@ -204,19 +203,8 @@ impl Command {
     }
 
     /// **The `CMD` register word that sends this command.**
-    ///
-    /// ```
-    /// use designware_mobile_storage::command::{Command, Response, GO_IDLE_STATE};
-    /// use designware_mobile_storage::registers::*;
-    ///
-    /// let w = Command::new(GO_IDLE_STATE, 0, Response::None).register_word();
-    /// assert_eq!(w & 0x3f, 0);
-    /// assert_ne!(w & COMMAND_START, 0);
-    /// assert_ne!(w & COMMAND_SEND_INITIALIZATION, 0);
-    /// assert_eq!(w & COMMAND_RESPONSE_EXPECT, 0);
-    /// ```
     #[must_use]
-    pub const fn register_word(&self) -> u32 {
+    pub(crate) const fn register_word(&self) -> u32 {
         let mut w = registers::COMMAND_START
             | registers::COMMAND_USE_HOLD_REGISTER
             | (self.index as u32 & 0x3f);
@@ -267,6 +255,15 @@ const _: () =
 mod tests {
     use super::*;
     use crate::registers::*;
+
+    #[test]
+    fn go_idle_starts_with_the_initialization_clocks_and_listens_for_nothing() {
+        let w = Command::new(GO_IDLE_STATE, 0, Response::None).register_word();
+        assert_eq!(w & 0x3f, 0);
+        assert_ne!(w & COMMAND_START, 0);
+        assert_ne!(w & COMMAND_SEND_INITIALIZATION, 0);
+        assert_eq!(w & COMMAND_RESPONSE_EXPECT, 0);
+    }
 
     #[test]
     fn a_long_response_with_a_crc_and_no_data() {
