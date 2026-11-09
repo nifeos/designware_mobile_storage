@@ -42,6 +42,25 @@ fn first_sector<R: RegisterWindowAndClock>(registers: R) -> Option<[u8; 512]> {
 }
 ```
 
+An eMMC comes up on a 1-bit bus at 25 megahertz. A caller may then ask for a wider bus and high
+speed. Neither step has run on a real eMMC yet (see BUGS), and `identify` never takes either:
+
+```rust
+use designware_mobile_storage::host_controller::{HostController, RegisterWindowAndClock};
+use designware_mobile_storage::sd;
+
+fn faster_embedded_card<R: RegisterWindowAndClock>(host: &mut HostController<R>) -> Option<sd::Card> {
+    let mut card = sd::identify(host, 8).ok()?; // the eMMC slot's bus-width
+    if sd::switch_multimedia_card_bus_width(host, &mut card, 8).is_err()
+        || sd::switch_multimedia_card_to_high_speed(host, &mut card).is_err()
+    {
+        // A failed switch leaves the card's width and timing unknown: start over at 1 bit.
+        card = sd::identify(host, 8).ok()?;
+    }
+    Some(card)
+}
+```
+
 `partition::MasterBootRecord::parse` reads that sector. `MasterBootRecord::scratch_sector_range`
 names the sectors before the first partition that a write test may use.
 
@@ -58,7 +77,7 @@ release can add a variant without breaking you.
 
 ## What is proven
 
-Each property below has a Kani harness in `src/proofs.rs`, twenty-three in all.
+Each property below has a Kani harness in `src/proofs.rs`, twenty-five in all.
 
 - No partition table makes the write test's scratch range touch a partition or sector 0.
 - A FIFO step never moves more than the transfer still owes. A write step never moves more than the
@@ -108,6 +127,12 @@ the simulated controller cover that. Only a board shows it for silicon.
   only inside it.
 - Writing one block through the IDMAC sends at most one write command, of 512 bytes, addressed to
   the block asked for. It sends that command only when the card has that block.
+- An eMMC's bus widens on the controller only after the card took the switch: a `CMD6` writing
+  `BUS_WIDTH` with a clean R1, then a `CMD13` with no error, no switch error and the transfer
+  state. The width it returns is the `Card`'s and no more than the slot allows.
+- The card clock rises above 25 megahertz only after the same holds for `HS_TIMING` and an
+  `EXT_CSD` read after the switch shows `HS_TIMING` at 1. Both switch harnesses end, never panic
+  and never send a write command.
 - The steps of identification end, never panic and never send a write command. They are reset,
   `CMD0`, `CMD8`, power-up and addressing on the polled host, then configuration (an eMMC's
   `EXT_CSD` read through the IDMAC). A configured SD card has a capacity and runs no faster than 25
@@ -184,8 +209,13 @@ driver polls each descriptor's own bit with `read_u32`, with no barrier in betwe
 
 ## BUGS
 
-- Default speed only: 25 megahertz, 4-bit SD, 1-bit eMMC. No tuning, high speed, ultra high speed
-  (UHS) or 8-bit bus.
+- `identify` runs default speed only: 25 megahertz, 4-bit SD, 1-bit eMMC. No tuning, ultra high
+  speed (UHS), double data rate (DDR) or the 200 megahertz eMMC timing.
+- An eMMC's 4- and 8-bit bus (`sd::switch_multimedia_card_bus_width`) and high-speed timing at up
+  to 52 megahertz (`sd::switch_multimedia_card_to_high_speed`) are implemented but unconfirmed on
+  hardware. They have run only against the simulated card, and only a caller that calls them gets
+  them. Until a board with an eMMC module passes `docs/bench-emmc-bus-modes.md`, every eMMC is
+  known to work on a 1-bit bus at 25 megahertz only.
 - Polled, with interrupts masked. No card-detect or write-protect handling.
 - The driver refuses a 16- or 64-bit FIFO. The IDMAC builds only 32-bit descriptors, so its region
   must sit below 4 GiB.

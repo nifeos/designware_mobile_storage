@@ -1,0 +1,23 @@
+Falsifies `designware_mobile_storage::proofs::the_card_clock_rises_only_after_the_card_shows_high_speed_timing`.
+
+The defect: `HS_TIMING` is not read back after `CMD6`, so the clock rises on a card that
+acknowledged the switch and kept its default timing.
+
+Expected to fail: `assert!(timing_read == Some(1))`.
+diff --git a/src/sd.rs b/src/sd.rs
+--- a/src/sd.rs
++++ b/src/sd.rs
+@@ -662,13 +662,6 @@ pub fn switch_multimedia_card_to_high_speed<
+     )?;
+     let after = read_extended_card_specific_data(host)?;
+     let timing_byte = card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_BYTE;
+-    if after[usize::from(timing_byte)]
+-        != card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_HIGH_SPEED
+-    {
+-        return Err(MultimediaCardSwitchError::NotConfirmed(u16::from(
+-            timing_byte,
+-        )));
+-    }
+     card.clock_hertz = host
+         .set_clock(hertz)
+         .map_err(MultimediaCardSwitchError::Clock)?;
