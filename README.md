@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/badge/license-%28MIT%20OR%20Apache--2.0%29%20AND%20ISC-blue.svg)](https://github.com/nifeos/designware_mobile_storage#license)
 [![minimum Rust version](https://img.shields.io/badge/rust-1.88%2B-blue.svg)](https://github.com/nifeos/designware_mobile_storage/blob/main/Cargo.toml)
 
-A Secure Digital (SD) card and eMMC (embedded MultiMediaCard) driver for the Synopsys DesignWare
+A Secure Digital (SD) card and eMMC (embedded multimedia card) driver for the Synopsys `DesignWare`
 Mobile Storage Host Controller (`snps,dw-mshc`, Linux's `dw_mmc`), as pure logic. It holds the
 register map, the command encoding and the polled controller sequences. It also holds the internal
 direct memory access controller (IDMAC), card identification, block reads and writes, and the
@@ -13,10 +13,17 @@ decoding of the card registers. A master boot record (MBR) rule says where a wri
 
 The crate never touches memory itself. You implement one small trait,
 `host_controller::RegisterWindowAndClock`, over your own mapped window. It reads a register, writes
-one and reads a microsecond clock. The crate is `no_std`, has no allocator, and targets the StarFive
-JH7110 (VisionFive 2).
+one and reads a microsecond clock. The crate is `no_std`, has no allocator, and targets the `StarFive`
+JH7110 (`VisionFive` 2).
 
 ## EXAMPLES
+
+The crate is not on crates.io. Take it from this repository, pinned at a commit you have read:
+
+```toml
+[dependencies]
+designware_mobile_storage = { git = "https://github.com/nifeos/designware_mobile_storage", rev = "<commit>" }
+```
 
 Hand `HostController::new` your register window, the controller's input clock and the first input,
 first output (FIFO) depth from the device tree. Then identify the card and move whole 512-byte
@@ -147,6 +154,36 @@ Rerun the proofs with `cargo kani`. Each harness has a patch at
 `falsifications/<module.path>.<harness>.patch` that plants the defect it rules out. Apply one with
 `patch -p1` from the repository root, and its harness fails at its own assertion.
 
+## Implementing the traits
+
+`host_controller::RegisterWindowAndClock` is the register window and a clock, and each trait's
+documentation states its contract in a `# Contract` section. In short:
+
+- Each `read` or `write` is one 32-bit access at the window's base plus the offset, made when the
+  call is made. Nothing may merge, split, repeat, drop or reorder it against another access to the
+  window: a read of the data FIFO's offset takes a word out of the FIFO, and several writes start
+  the controller. Use volatile accesses to a device mapping. Every offset the driver passes is a
+  multiple of 4 below `registers::USED_REGISTER_WINDOW_BYTES`.
+- `now_microseconds` counts microseconds from any fixed point and may wrap. It must keep
+  advancing, because every wait in the driver ends only when the clock passes its deadline.
+
+`internal_direct_memory_access::DirectMemoryAccessRegion` is the memory the IDMAC reads and writes,
+used only after `HostController::with_internal_direct_memory_access`. The region starts on a page
+(`internal_direct_memory_access::PAGE_BYTES`). It holds one page of descriptors, then 1 to
+`MAXIMUM_DESCRIPTORS` data pages, all below 4 GiB as the controller addresses them. The driver
+calls `barrier` twice in each transfer. The first call comes after it writes the descriptors and
+the data, before the register writes that start the controller. The second comes after the
+controller has finished, before the driver reads the data back. While the transfer runs, the
+driver polls each descriptor's own bit with `read_u32`, with no barrier in between.
+
+- Where the DMA is coherent with the processor's caches, the accessors are plain loads and stores
+  to the region. `barrier` is a fence that orders memory accesses against device accesses, such
+  as `fence iorw, iorw` on RISC-V or `dsb sy` on Arm.
+- Where it is not coherent, map the region uncached and keep `barrier` that fence. A cached
+  mapping works only if `barrier` writes the region's dirty cache lines back to memory and
+  invalidates them, and `read_u32` and `read_bytes` invalidate the lines they read first. The
+  driver does no cache maintenance of its own.
+
 ## BUGS
 
 - Default speed only: 25 megahertz, 4-bit SD, 1-bit eMMC. No tuning, high speed, ultra high speed
@@ -188,7 +225,11 @@ Rust 1.88.
 ## License
 
 Licensed under either of the MIT license (`LICENSE-MIT`) or the Apache License, Version 2.0
-(`LICENSE-APACHE`), at your option. Parts adapt OpenBSD's `dwmmc.c` under the Internet Systems
-Consortium (ISC) license, and `src/lib.rs` carries its notice. The manifest's SPDX expression is
-`(MIT OR Apache-2.0) AND ISC`. Card identification follows the SD specification. It takes only the
-order of its addressing commands from OpenBSD's `sdmmc_mem.c`, whose code the crate does not adapt.
+(`LICENSE-APACHE`), at your option. Parts adapt OpenBSD's `sys/dev/fdt/dwmmc.c` (revision 1.33)
+under the Internet Systems Consortium (ISC) license: the register map, the reset, clock and bus
+width sequences, the command flags and the polled FIFO transfer. `LICENSE-ISC` holds that notice,
+and `src/lib.rs` carries it too. The manifest's SPDX expression is `(MIT OR Apache-2.0) AND ISC`.
+Card identification follows the SD specification. It takes only the order of its addressing
+commands from OpenBSD's `sdmmc_mem.c`, whose code the crate does not adapt. GPL sources (Linux,
+U-Boot, the device trees) served only as references for hardware facts, and the crate copies no
+GPL code.
