@@ -1,4 +1,2 @@
-# Every path is owned by the crate-maintainers team. The
-# team must exist in the organization; until it does, this file names a team that is not there,
-# and review assignment for it is a no-op rather than an error.
+# Every path is owned by the organization's crate-maintainers team.
 * @nifeos/crate-maintainers
