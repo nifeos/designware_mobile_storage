@@ -4,7 +4,7 @@
 //! checks this against silicon. It models only the contract the driver relies on, as the databook
 //! and OpenBSD describe it: self-clearing `CONTROL_REGISTER` resets, the `CMD` start bit, a FIFO raising
 //! `RXDR`, `TXDR`, `DTO` and `ACD`, `STATUS_REGISTER` fill and busy, `CARDTHRCTL` above the FIFO ending in
-//! `FRUN` and `DTO` as on the VisionFive 2, and the IDMAC walk, whose last read words reach memory after
+//! `FRUN` and `DTO` as on the `VisionFive` 2, and the IDMAC walk, whose last read words reach memory after
 //! `DTO`. Time is one microsecond per `now_microseconds` call, so a test that would hang on silicon fails
 //! here.
 
@@ -60,7 +60,7 @@ impl Memory {
 }
 
 impl DirectMemoryAccessRegion for Memory {
-    fn direct_memory_access_address(&self) -> u64 {
+    fn direct_memory_access_bus_address(&self) -> u64 {
         self.bus().base
     }
     fn bytes(&self) -> u32 {
@@ -112,13 +112,13 @@ enum Walk {
 /// Which card is in the slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CardKind {
-    /// An SDHC card: answers CMD8, high capacity, block addressed.
+    /// An SDHC card: answers `CMD8`, high capacity, block addressed.
     SdHighCapacity,
-    /// An SD 1.x card: ignores CMD8, standard capacity, byte addressed.
+    /// An SD 1.x card: ignores `CMD8`, standard capacity, byte addressed.
     SdVersion1,
-    /// An SD 2.0 card of standard capacity: answers CMD8, byte addressed.
+    /// An SD 2.0 card of standard capacity: answers `CMD8`, byte addressed.
     SdVersion2,
-    /// An eMMC: ignores CMD8 in idle and CMD55, answers CMD1, takes its address from the host.
+    /// An eMMC: ignores `CMD8` in idle and `CMD55`, answers `CMD1`, takes its address from the host.
     MultimediaCard,
     /// An empty slot: nothing answers.
     Empty,
@@ -209,7 +209,7 @@ pub struct SimulatedHostController {
     pub reset_stuck: bool,
     /// The controller never takes a clock update: `CMD`'s start bit stays set.
     pub clock_stuck: bool,
-    /// The card holds DAT0 low forever.
+    /// The card holds `DAT0` low forever.
     pub busy_forever: bool,
     /// How many `RINTSTS` reads pass before a command's answer (`CD`, `RTO`, the response words)
     /// lands, as on silicon, where the command takes time on the wire.
@@ -223,10 +223,10 @@ pub struct SimulatedHostController {
     pub overreport_fill: bool,
     /// A write's data phase ends with a data CRC error and no `DTO`.
     pub crc_error_at_end: bool,
-    /// How many `RINTSTS` reads pass after `DTO` before the automatic CMD12's `ACD` lands.
+    /// How many `RINTSTS` reads pass after `DTO` before the automatic `CMD12`'s `ACD` lands.
     pub late_automatic_command_done: u32,
     automatic_command_done_pending: u32,
-    /// An eMMC of 2 GB or less: byte addressed, its OCR without the sector-mode bit.
+    /// An eMMC of 2 gigabytes or less: byte addressed, its OCR without the sector-mode bit.
     pub multimedia_card_byte_addressed: bool,
     /// What `EXT_CSD`'s `SEC_COUNT` reports, if not the card's real size.
     pub extended_card_specific_data_sectors: Option<u32>,
@@ -362,8 +362,11 @@ impl SimulatedHostController {
     }
 
     fn is_high_capacity(&self) -> bool {
-        !matches!(self.kind, CardKind::SdVersion1 | CardKind::SdVersion2)
-            && !(self.kind == CardKind::MultimediaCard && self.multimedia_card_byte_addressed)
+        match self.kind {
+            CardKind::SdVersion1 | CardKind::SdVersion2 => false,
+            CardKind::MultimediaCard => !self.multimedia_card_byte_addressed,
+            _ => true,
+        }
     }
 
     fn r1(&self) -> u32 {
@@ -725,7 +728,7 @@ impl SimulatedHostController {
             if !more {
                 return;
             }
-            let (descriptor_direct_memory_access_address, done) = match self.walk {
+            let (descriptor_direct_memory_access_bus_address, done) = match self.walk {
                 Walk::Idle => (
                     self.peek(registers::DESCRIPTOR_LIST_BASE_PHYSICAL_ADDRESS_REGISTER),
                     0,
@@ -733,7 +736,8 @@ impl SimulatedHostController {
                 Walk::At(d, n) => (d, n),
                 Walk::Suspended(_) | Walk::Halted | Walk::Finished => return,
             };
-            let Some(at) = self.offset(&bus, descriptor_direct_memory_access_address, 16) else {
+            let Some(at) = self.offset(&bus, descriptor_direct_memory_access_bus_address, 16)
+            else {
                 self.halt();
                 return;
             };
@@ -750,7 +754,7 @@ impl SimulatedHostController {
             if word_0 & DESCRIPTOR_OWNED_BY_CONTROLLER == 0
                 || done == 0 && self.unowned_at == Some(self.walked)
             {
-                self.walk = Walk::Suspended(descriptor_direct_memory_access_address);
+                self.walk = Walk::Suspended(descriptor_direct_memory_access_bus_address);
                 *self.register(registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER) |=
                     registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_DESCRIPTOR_UNAVAILABLE | registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ABNORMAL_INTERRUPT_SUMMARY;
                 return;
@@ -775,7 +779,7 @@ impl SimulatedHostController {
             }
             let done = done + 4;
             if done < size {
-                self.walk = Walk::At(descriptor_direct_memory_access_address, done);
+                self.walk = Walk::At(descriptor_direct_memory_access_bus_address, done);
                 continue;
             }
             bus.bytes[at..at + 4]
@@ -796,15 +800,21 @@ impl SimulatedHostController {
             } else if word_0 & DESCRIPTOR_CHAINED != 0 {
                 Walk::At(next, 0)
             } else {
-                Walk::At(descriptor_direct_memory_access_address + 16, 0)
+                Walk::At(descriptor_direct_memory_access_bus_address + 16, 0)
             };
         }
     }
 
-    /// The byte offset in memory of `len` bytes at `direct_memory_access_address`, if they are all there.
-    fn offset(&self, bus: &Bus, direct_memory_access_address: u32, len: usize) -> Option<usize> {
+    /// The byte offset in memory of `len` bytes at `direct_memory_access_bus_address`, if they are all there.
+    fn offset(
+        &self,
+        bus: &Bus,
+        direct_memory_access_bus_address: u32,
+        len: usize,
+    ) -> Option<usize> {
         let off =
-            usize::try_from(u64::from(direct_memory_access_address).checked_sub(bus.base)?).ok()?;
+            usize::try_from(u64::from(direct_memory_access_bus_address).checked_sub(bus.base)?)
+                .ok()?;
         (off + len <= bus.bytes.len()).then_some(off)
     }
 

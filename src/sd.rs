@@ -1,5 +1,5 @@
 //! Bringing a card up, and reading and writing its blocks. Identification is the SD Physical Layer
-//! Simplified Specification's figure 4-2 (version 9.10), with JEDEC JESD84's eMMC sequence beside
+//! Simplified Specification's figure 4-2 (version 9.10), with `JEDEC JESD84`'s eMMC sequence beside
 //! it. Only the order of the addressing commands (`CMD2`, `CMD3`, `CMD9`, then `CMD7`) follows
 //! OpenBSD's `sdmmc_mem_scan` and `sdmmc_mem_init` (`sys/dev/sdmmc/sdmmc_mem.c`, ISC); no code is
 //! adapted from it. The power-up differs: OpenBSD asks the OCR first with an empty `ACMD41` and
@@ -7,7 +7,7 @@
 //! answers decides the
 //! card: an SD 2.0 card echoes `CMD8`'s check pattern, and an eMMC does not answer `CMD55`, which
 //! tells it from an SD 1.x card and brings it up with `CMD1`. The clock then goes from 400 kHz to
-//! 25 MHz, default speed; high speed and UHS are not attempted, and an eMMC's bus stays 1-bit.
+//! 25 megahertz, default speed; high speed and UHS are not attempted, and an eMMC's bus stays 1-bit.
 //! Every step's failure names the step, so a board transcript that stops says where.
 
 use crate::card::{
@@ -22,7 +22,7 @@ use crate::internal_direct_memory_access::DirectMemoryAccessRegion;
 /// The identification clock, the spec's ceiling for it, in hertz.
 pub(crate) const IDENTIFY_HERTZ: u32 = 400_000;
 /// The transfer clock: default speed, the spec's ceiling for it on SD and the legacy eMMC ceiling
-/// (26 MHz) rounded down.
+/// (26 megahertz) rounded down.
 pub const TRANSFER_HERTZ: u32 = 25_000_000;
 /// One block, in bytes.
 pub const BLOCK_BYTES: usize = 512;
@@ -42,9 +42,9 @@ pub enum CardKind {
     SdVersion1,
     /// SD 2.0 or later, standard capacity, byte addressed.
     SdVersion2,
-    /// SDHC, SDXC or SDUC: block addressed.
+    /// SDHC, `SDXC` or `SDUC`: block addressed.
     SdHighCapacity,
-    /// An eMMC (embedded multimedia card) or an MMC (multimedia card). Block addressed when the OCR
+    /// An eMMC (embedded multimedia card) or an ordinary multimedia card (`MMC`). Block addressed when the OCR
     /// says sector mode.
     #[doc(alias = "mmc")]
     MultimediaCard,
@@ -152,7 +152,7 @@ fn r1_ok(index: u8, r1: u32) -> Result<(), InitializationError> {
 }
 
 /// **Bring up whatever card is in the slot** and leave it selected, in the transfer state, at
-/// [`TRANSFER_HERTZ`]. `maximum_bus_width` is the tree's `bus-width` for the slot (4 on the VisionFive 2's SD
+/// [`TRANSFER_HERTZ`]. `maximum_bus_width` is the tree's `bus-width` for the slot (4 on the `VisionFive` 2's SD
 /// slot, 8 on its eMMC slot).
 ///
 /// # Errors

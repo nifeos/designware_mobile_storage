@@ -1,95 +1,95 @@
 //! **Commands, and the `CMD` register word that sends each one.**
 //!
 //! The flag choices are OpenBSD's `dwmmc_exec_command`, adapted: the hold register on every command,
-//! wait-for-previous-data on everything but CMD12 and CMD13, the initialization clocks on CMD0, and
-//! an automatic CMD12 after a multi-block transfer. The response kinds are the SD Physical Layer
-//! Simplified Specification's (section 4.9) and JEDEC JESD84's for eMMC; which of them carry a
+//! wait-for-previous-data on everything but `CMD12` and `CMD13`, the initialization clocks on `CMD0`, and
+//! an automatic `CMD12` after a multi-block transfer. The response kinds are the SD Physical Layer
+//! Simplified Specification's (section 4.9) and `JEDEC JESD84`'s for eMMC; which of them carry a
 //! cyclic redundancy check (CRC) is the spec's statement, and the R3 exception (the OCR register
 //! has no CRC, its CRC field reads as all ones) is why [`Response::has_crc`] exists.
 //!
 //! The command constants keep the specifications' names: the SD specification's section 4.7.4 and
-//! JESD84-B51's section 6.10.4. Each doc gives the command's number and what it does.
+//! `JESD84-B51`'s section 6.10.4. Each doc gives the command's number and what it does.
 
 use crate::registers;
 
-/// **CMD0, go idle state** (`GO_IDLE_STATE` in both specifications): every card back to idle. No
+/// **`CMD0`, go idle state** (`GO_IDLE_STATE` in both specifications): every card back to idle. No
 /// response.
 #[doc(alias = "reset to idle")]
 pub const GO_IDLE_STATE: u8 = 0;
-/// **CMD1, send operation conditions** (`SEND_OP_COND`, JESD84-B51, eMMC only): negotiate the
+/// **`CMD1`, send operation conditions** (`SEND_OP_COND`, `JESD84-B51`, eMMC only): negotiate the
 /// voltage and wait for power-up. The response is R3.
 #[doc(alias = "multimedia card operation conditions")]
 #[doc(alias = "SEND_OP_COND")]
 pub(crate) const SEND_OPERATION_CONDITIONS: u8 = 1;
-/// **CMD2, all send card identification** (`ALL_SEND_CID` in both specifications): the card's
+/// **`CMD2`, all send card identification** (`ALL_SEND_CID` in both specifications): the card's
 /// identity, 128 bits, as R2.
 #[doc(alias = "send card identification")]
 #[doc(alias = "ALL_SEND_CID")]
 pub(crate) const ALL_SEND_CARD_IDENTIFICATION: u8 = 2;
-/// **CMD3, send relative address** (the SD specification's `SEND_RELATIVE_ADDR`; JESD84-B51 calls
+/// **`CMD3`, send relative address** (the SD specification's `SEND_RELATIVE_ADDR`; `JESD84-B51` calls
 /// it `SET_RELATIVE_ADDR`): on SD the card picks its address and answers R6; on eMMC the host sets
 /// it and the card answers R1.
 #[doc(alias = "relative card address")]
 #[doc(alias = "SEND_RELATIVE_ADDR")]
 pub(crate) const SEND_RELATIVE_ADDRESS: u8 = 3;
-/// **CMD6, switch** (JESD84-B51's `SWITCH`; the SD specification's `SWITCH_FUNC`, unused here):
+/// **`CMD6`, switch** (`JESD84-B51`'s `SWITCH`; the SD specification's `SWITCH_FUNC`, unused here):
 /// write one byte of `EXT_CSD` on an eMMC. The response is R1b.
 #[doc(alias = "switch mode")]
 pub const SWITCH: u8 = 6;
-/// **CMD7, select or deselect card** (the specifications' `SELECT/DESELECT_CARD`, as OpenBSD's
+/// **`CMD7`, select or deselect card** (the specifications' `SELECT/DESELECT_CARD`, as OpenBSD's
 /// `MMC_SELECT_CARD` writes it): move the addressed card into the transfer state. The response is
 /// R1b.
 #[doc(alias = "select card")]
 pub(crate) const SELECT_CARD: u8 = 7;
-/// **CMD8, send interface condition** (the SD specification's `SEND_IF_COND`; JESD84-B51's
+/// **`CMD8`, send interface condition** (the SD specification's `SEND_IF_COND`; `JESD84-B51`'s
 /// `SEND_EXT_CSD`): on SD 2.0 and later, R7 echoing the voltage and check pattern; on eMMC, R1 and
 /// the 512-byte `EXT_CSD`. The same index with two meanings is how an eMMC is told from an SD card.
 #[doc(alias = "interface condition")]
 #[doc(alias = "SEND_IF_COND")]
 pub(crate) const SEND_INTERFACE_CONDITION: u8 = 8;
-/// **CMD9, send card-specific data** (`SEND_CSD` in both specifications): the card's capacity and
+/// **`CMD9`, send card-specific data** (`SEND_CSD` in both specifications): the card's capacity and
 /// timing, 128 bits, as R2.
 #[doc(alias = "send card specific data")]
 #[doc(alias = "SEND_CSD")]
 pub(crate) const SEND_CARD_SPECIFIC_DATA: u8 = 9;
-/// **CMD12, stop transmission** (`STOP_TRANSMISSION` in both specifications): end a multiple-block
+/// **`CMD12`, stop transmission** (`STOP_TRANSMISSION` in both specifications): end a multiple-block
 /// transfer. The response is R1b.
 #[doc(alias = "stop transfer")]
 pub(crate) const STOP_TRANSMISSION: u8 = 12;
-/// **CMD13, send status** (`SEND_STATUS` in both specifications): the card status word, as R1.
+/// **`CMD13`, send status** (`SEND_STATUS` in both specifications): the card status word, as R1.
 #[doc(alias = "card status")]
 pub const SEND_STATUS: u8 = 13;
-/// **CMD16, set block length** (`SET_BLOCKLEN` in both specifications): 512, for a
+/// **`CMD16`, set block length** (`SET_BLOCKLEN` in both specifications): 512, for a
 /// standard-capacity card; high-capacity cards ignore it. The response is R1.
 #[doc(alias = "set block length")]
 #[doc(alias = "SET_BLOCKLEN")]
 pub(crate) const SET_BLOCK_LENGTH: u8 = 16;
-/// **CMD17, read single block** (`READ_SINGLE_BLOCK` in both specifications): one block from the
+/// **`CMD17`, read single block** (`READ_SINGLE_BLOCK` in both specifications): one block from the
 /// card. The response is R1.
 #[doc(alias = "read one block")]
 pub(crate) const READ_SINGLE_BLOCK: u8 = 17;
-/// **CMD18, read multiple block** (`READ_MULTIPLE_BLOCK` in both specifications): blocks from the
-/// card until CMD12. The response is R1.
+/// **`CMD18`, read multiple block** (`READ_MULTIPLE_BLOCK` in both specifications): blocks from the
+/// card until `CMD12`. The response is R1.
 #[doc(alias = "read blocks")]
 pub(crate) const READ_MULTIPLE_BLOCK: u8 = 18;
-/// **CMD24, write block** (`WRITE_BLOCK` in both specifications): one block to the card. The
+/// **`CMD24`, write block** (`WRITE_BLOCK` in both specifications): one block to the card. The
 /// response is R1.
 #[doc(alias = "write one block")]
 pub(crate) const WRITE_BLOCK: u8 = 24;
-/// **CMD25, write multiple block** (`WRITE_MULTIPLE_BLOCK` in both specifications): blocks to the
-/// card until CMD12. The response is R1.
+/// **`CMD25`, write multiple block** (`WRITE_MULTIPLE_BLOCK` in both specifications): blocks to the
+/// card until `CMD12`. The response is R1.
 #[doc(alias = "write blocks")]
 pub(crate) const WRITE_MULTIPLE_BLOCK: u8 = 25;
-/// **CMD55, application command** (the SD specification's `APP_CMD`): the next command is
+/// **`CMD55`, application command** (the SD specification's `APP_CMD`): the next command is
 /// application-specific (`ACMD`). The response is R1.
 #[doc(alias = "application command")]
 #[doc(alias = "APP_CMD")]
 pub(crate) const APPLICATION_COMMAND: u8 = 55;
-/// **ACMD6, set bus width** (the SD specification's `SET_BUS_WIDTH`): the data bus width, 1 or 4
+/// **`ACMD6`, set bus width** (the SD specification's `SET_BUS_WIDTH`): the data bus width, 1 or 4
 /// bits. The response is R1.
 #[doc(alias = "bus width")]
 pub(crate) const SET_BUS_WIDTH: u8 = 6;
-/// **ACMD41, SD send operation conditions** (`SD_SEND_OP_COND`, the SD specification): negotiate
+/// **`ACMD41`, SD send operation conditions** (`SD_SEND_OP_COND`, the SD specification): negotiate
 /// the voltage and capacity support and wait for power-up. The response is R3.
 #[doc(alias = "SD operation conditions")]
 #[doc(alias = "SD_SEND_OP_COND")]
@@ -98,21 +98,21 @@ pub(crate) const SD_SEND_OPERATION_CONDITIONS: u8 = 41;
 /// What comes back from the card, and so how the controller must be told to listen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Response {
-    /// No response (CMD0): nothing comes back.
+    /// No response (`CMD0`): nothing comes back.
     None,
-    /// **R1, normal response** (SD section 4.9.1, JESD84-B51 section 6.12): 48 bits carrying the
+    /// **R1, normal response** (SD section 4.9.1, `JESD84-B51` section 6.12): 48 bits carrying the
     /// card status word, CRC checked.
     #[doc(alias = "normal response")]
     R1,
-    /// **R1b, normal response with busy** (SD section 4.9.2, JESD84-B51 section 6.12): R1, then the
-    /// card holds DAT0 low while it is busy.
+    /// **R1b, normal response with busy** (SD section 4.9.2, `JESD84-B51` section 6.12): R1, then the
+    /// card holds `DAT0` low while it is busy.
     #[doc(alias = "response with busy")]
     R1b,
-    /// **R2, card identification or card-specific data** (SD section 4.9.3, JESD84-B51 section
+    /// **R2, card identification or card-specific data** (SD section 4.9.3, `JESD84-B51` section
     /// 6.12): 136 bits carrying the CID or the CSD register.
     #[doc(alias = "card register response")]
     R2,
-    /// **R3, operation conditions** (SD section 4.9.4, JESD84-B51 section 6.12): 48 bits carrying
+    /// **R3, operation conditions** (SD section 4.9.4, `JESD84-B51` section 6.12): 48 bits carrying
     /// the OCR register, with **no CRC**.
     #[doc(alias = "operation conditions response")]
     R3,
@@ -121,7 +121,7 @@ pub enum Response {
     #[doc(alias = "relative address response")]
     R6,
     /// **R7, card interface condition** (SD section 4.9.6, SD only): 48 bits echoing the voltage
-    /// and check pattern of CMD8.
+    /// and check pattern of `CMD8`.
     #[doc(alias = "interface condition response")]
     R7,
 }
@@ -146,7 +146,7 @@ pub struct Data {
     /// Bytes per block, the `BLKSIZ` value. 512 for every block transfer this driver makes.
     #[doc(alias = "block size")]
     pub block_bytes: u32,
-    /// How many blocks. Above one, the controller sends CMD12 by itself at the end.
+    /// How many blocks. Above one, the controller sends `CMD12` by itself at the end.
     pub blocks: u32,
     /// True for a write to the card.
     pub is_write: bool,

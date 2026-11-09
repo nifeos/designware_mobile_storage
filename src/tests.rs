@@ -549,7 +549,7 @@ fn a_status_error_on_a_transfer_is_reported_not_swallowed() {
 }
 
 #[test]
-fn a_byte_addressed_card_stops_where_a_32_bit_byte_address_does() {
+fn a_card_counting_in_bytes_stops_where_a_32_bit_byte_count_does() {
     let last = (1u64 << 32) / BLOCK_BYTES as u64;
     assert!(sd::can_address_blocks(1 << 40, false, last - 1, 1));
     assert!(!sd::can_address_blocks(1 << 40, false, last, 1));
@@ -582,7 +582,7 @@ fn sequential_long_reads_walk_up_from_the_partition_and_stop_at_the_card_end() {
 
 /// An SD card's relative address goes in the high half of every addressed command's argument,
 /// the `APP_CMD` before `ACMD6` among them; its CID is decoded with the SD layout and its
-/// ACMD41 argument asks for high capacity only of a card that answered CMD8.
+/// `ACMD41` argument asks for high capacity only of a card that answered `CMD8`.
 #[test]
 fn an_sd_card_is_addressed_by_the_relative_card_address_it_chose_and_decoded_as_sd() {
     let mut h = host(CardKind::SdHighCapacity, 8192);
@@ -607,7 +607,7 @@ fn an_sd_card_is_addressed_by_the_relative_card_address_it_chose_and_decoded_as_
     assert!(h.into_registers().commands.contains(&(41, 0x0030_0000)));
 }
 
-/// An eMMC of 2 GB or less is byte addressed and sized by its CSD; `EXT_CSD`'s count, which
+/// An eMMC of 2 gigabytes or less is byte addressed and sized by its CSD; `EXT_CSD`'s count, which
 /// such a part need not fill in, is not trusted for it. A larger one is sized by `EXT_CSD`.
 #[test]
 fn an_embedded_multimedia_card_is_sized_by_extended_card_specific_data_only_when_it_is_sector_addressed()

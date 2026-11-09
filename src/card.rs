@@ -1,9 +1,9 @@
-//! **What a card says about itself**: the OCR, the CID, the CSD, the R1 status word and the eMMC
+//! **What a card says about itself**: the OCR, the card identification data (CID), the CSD, the R1 status word and the eMMC
 //! `EXT_CSD`, decoded. Bit positions are the SD Physical Layer Simplified Specification's (version
-//! 9.10, sections 5.1 to 5.3 and 4.10.1) and JEDEC JESD84-B51's for eMMC, in the spec's own
+//! 9.10, sections 5.1 to 5.3 and 4.10.1) and `JEDEC JESD84-B51`'s for eMMC, in the spec's own
 //! numbering, which is also Linux's `unstuff_bits` convention (`drivers/mmc/core/mmc_ops.h`): a long response is held as four
 //! words `[RESP0, RESP1, RESP2, RESP3]`, bit 0 of `RESP0` being the register's bit 0 (the always-one
-//! end bit, with the CRC7 in bits 7:1).
+//! end bit, with the 7-bit cyclic redundancy check (CRC) in bits 7:1).
 //!
 //! Nothing here can fail on hostile input. A card is a device on the far side of a bus and its
 //! registers are data, so every decoder is total and every capacity is computed without overflow.
@@ -35,7 +35,7 @@ pub(crate) const INTERFACE_CONDITION_ARGUMENT: u32 = 0x1aa;
 
 /// **Card status errors** (SD section 4.10.1): the R1 bits that report a failure, Linux's error
 /// mask: out of range, address, block length, erase sequence and parameter, write-protect
-/// violation, lock failure, CRC, illegal command, ECC, controller error, unknown error, CSD
+/// violation, lock failure, CRC, illegal command, error correction code (ECC), controller error, unknown error, CSD
 /// overwrite, write-protect erase skip, and the authentication sequence error. `CARD_IS_LOCKED`
 /// (bit 25) is a state, not an error, and is not in the mask.
 #[doc(alias = "card status errors")]
@@ -78,12 +78,12 @@ pub const fn extract_bits(register: &[u32; 4], start: u32, width_bits: u32) -> u
 }
 
 /// **The card-specific data register (CSD)**, decoded to the two facts this driver uses: SD
-/// Physical Layer Simplified Specification section 5.3, JESD84-B51 section 7.3 for eMMC.
+/// Physical Layer Simplified Specification section 5.3, `JESD84-B51` section 7.3 for eMMC.
 #[doc(alias = "csd")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CardSpecificData {
     /// The structure version, bits 127:126: 0 standard capacity, 1 high or extended capacity
-    /// (SDHC and SDXC), 2 ultra capacity (SDUC). For eMMC it is a different field with different
+    /// (SDHC and `SDXC`), 2 ultra capacity (`SDUC`). For eMMC it is a different field with different
     /// meaning; see [`CardSpecificData::from_sd_register`]'s caller.
     pub structure: u32,
     /// Capacity in 512-byte blocks, or 0 when the structure is one this driver does not decode.
@@ -96,7 +96,7 @@ impl CardSpecificData {
     /// ```
     /// use designware_mobile_storage::card::CardSpecificData;
     ///
-    /// // A 32 GB SDHC card: structure 1, C_SIZE 60_947 (bits 69:48).
+    /// // A 32 gigabytes SDHC card: structure 1, C_SIZE 60_947 (bits 69:48).
     /// let csd = [0, 60_947u32 << 16, 0, 1 << 30];
     /// assert_eq!(CardSpecificData::from_sd_register(&csd).blocks, 60_948 * 1024);
     /// ```
@@ -126,7 +126,7 @@ impl CardSpecificData {
         CardSpecificData { structure, blocks }
     }
 
-    /// **Decode an eMMC's CSD**, which gives a capacity only up to 2 GB. Above that `C_SIZE` reads
+    /// **Decode an eMMC's CSD**, which gives a capacity only up to 2 gigabytes. Above that `C_SIZE` reads
     /// `0xfff` and the true count is `EXT_CSD`'s [`extended_card_specific_data_sectors`]. The
     /// layout of the size fields is the same as SD's version 1.
     #[must_use]
@@ -145,7 +145,7 @@ impl CardSpecificData {
 }
 
 /// **The card identification register (CID)**, decoded to what a transcript should name: SD
-/// Physical Layer Simplified Specification section 5.2, JESD84-B51 section 7.2 for eMMC.
+/// Physical Layer Simplified Specification section 5.2, `JESD84-B51` section 7.2 for eMMC.
 #[doc(alias = "cid")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CardIdentification {

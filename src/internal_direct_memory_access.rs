@@ -20,11 +20,11 @@ use crate::registers;
 /// is memory `simulator` walks too. `designware_ethernet::DirectMemoryAccessRegion`'s shape.
 pub trait DirectMemoryAccessRegion {
     /// The region's first byte as the controller's direct memory access engine addresses it: on the
-    /// VisionFive 2, its physical address. Behind an address translation unit or a bus offset it
+    /// `VisionFive` 2, its physical address. Behind an address translation unit or a bus offset it
     /// differs from the processor's physical address, so it does not take that name.
     #[doc(alias = "bus address")]
     #[doc(alias = "dma_addr_t")]
-    fn direct_memory_access_address(&self) -> u64;
+    fn direct_memory_access_bus_address(&self) -> u64;
     /// The region's length in bytes.
     fn bytes(&self) -> u32;
     /// Read the little-endian `u32` at `offset`.
@@ -47,7 +47,7 @@ pub trait DirectMemoryAccessRegion {
 pub enum NoDirectMemoryAccess {}
 
 impl DirectMemoryAccessRegion for NoDirectMemoryAccess {
-    fn direct_memory_access_address(&self) -> u64 {
+    fn direct_memory_access_bus_address(&self) -> u64 {
         match *self {}
     }
     fn bytes(&self) -> u32 {
@@ -161,7 +161,7 @@ impl core::error::Error for Refusal {}
 #[doc(alias = "idmac")]
 pub struct InternalDirectMemoryAccess<D: DirectMemoryAccessRegion> {
     region: D,
-    region_direct_memory_access_address: u32,
+    region_direct_memory_access_bus_address: u32,
     capacity: u32,
 }
 
@@ -180,7 +180,7 @@ impl<D: DirectMemoryAccessRegion> InternalDirectMemoryAccess<D> {
         if registers::uses_64_bit_direct_memory_access(id.hardware_configuration) {
             return Err(Refusal::Addressing64);
         }
-        let base = region.direct_memory_access_address();
+        let base = region.direct_memory_access_bus_address();
         if !base.is_multiple_of(u64::from(PAGE_BYTES)) {
             return Err(Refusal::Alignment(base));
         }
@@ -189,10 +189,10 @@ impl<D: DirectMemoryAccessRegion> InternalDirectMemoryAccess<D> {
         if !bytes.is_multiple_of(PAGE_BYTES) || pages < 2 || pages - 1 > MAXIMUM_DESCRIPTORS {
             return Err(Refusal::Size(bytes));
         }
-        let Ok(region_direct_memory_access_address) = u32::try_from(base) else {
+        let Ok(region_direct_memory_access_bus_address) = u32::try_from(base) else {
             return Err(Refusal::AboveFourGibibytes(base));
         };
-        if region_direct_memory_access_address
+        if region_direct_memory_access_bus_address
             .checked_add(bytes - 1)
             .is_none()
         {
@@ -200,7 +200,7 @@ impl<D: DirectMemoryAccessRegion> InternalDirectMemoryAccess<D> {
         }
         Ok(InternalDirectMemoryAccess {
             region,
-            region_direct_memory_access_address,
+            region_direct_memory_access_bus_address,
             capacity: bytes - PAGE_BYTES,
         })
     }
@@ -220,7 +220,12 @@ impl<D: DirectMemoryAccessRegion> InternalDirectMemoryAccess<D> {
     fn write_chain(&mut self, bytes: u32) {
         let count = descriptors_for(bytes);
         for i in 0..count {
-            let d = descriptor(self.region_direct_memory_access_address, i, count, bytes);
+            let d = descriptor(
+                self.region_direct_memory_access_bus_address,
+                i,
+                count,
+                bytes,
+            );
             for (w, word) in d.iter().enumerate() {
                 self.region
                     .write_u32(i * DESCRIPTOR_BYTES + 4 * w as u32, *word);
@@ -261,12 +266,12 @@ pub(crate) const fn descriptors_for(bytes: u32) -> u32 {
 }
 
 /// **Descriptor `i` of `count`** for a transfer of `bytes`, in a region whose first byte is at
-/// `region_direct_memory_access_address` as the bus sees it: the chain page first, then the data pages in order. Every descriptor is the
+/// `region_direct_memory_access_bus_address` as the bus sees it: the chain page first, then the data pages in order. Every descriptor is the
 /// IDMAC's and chained; the first carries `FS`, the last `LD` and the only completion status, and
 /// each holds a page except the last, which holds what is left.
 #[must_use]
 pub(crate) const fn descriptor(
-    region_direct_memory_access_address: u32,
+    region_direct_memory_access_bus_address: u32,
     i: u32,
     count: u32,
     bytes: u32,
@@ -290,8 +295,8 @@ pub(crate) const fn descriptor(
     [
         word_0,
         size,
-        region_direct_memory_access_address + PAGE_BYTES * (i + 1),
-        region_direct_memory_access_address + DESCRIPTOR_BYTES * next,
+        region_direct_memory_access_bus_address + PAGE_BYTES * (i + 1),
+        region_direct_memory_access_bus_address + DESCRIPTOR_BYTES * next,
     ]
 }
 
@@ -325,10 +330,10 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
     /// reset has cleared and before the command is written, so the engine is ready for the first
     /// word. `IDINTEN` stays zero and `CONTROL_REGISTER`'s interrupt enable clear; `IDSTS` is raw.
     pub(crate) fn internal_direct_memory_access_start(&mut self) -> Result<(), Error> {
-        let Some(region_direct_memory_access_address) = self
+        let Some(region_direct_memory_access_bus_address) = self
             .direct_memory_access
             .as_ref()
-            .map(|d| d.region_direct_memory_access_address)
+            .map(|d| d.region_direct_memory_access_bus_address)
         else {
             return Ok(());
         };
@@ -357,7 +362,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         );
         self.registers.write(
             registers::DESCRIPTOR_LIST_BASE_PHYSICAL_ADDRESS_REGISTER,
-            region_direct_memory_access_address,
+            region_direct_memory_access_bus_address,
         );
         let control = self.registers.read(registers::CONTROL_REGISTER);
         self.registers.write(
@@ -575,7 +580,7 @@ mod tests {
         assert_eq!(descriptor(b, 0, 1, 512), [0x8000_001c, 512, b + 0x1000, b]);
     }
 
-    /// The 4 GiB edge is the one an 8 GB VisionFive 2 could reach: a region ending exactly there is
+    /// The 4 GiB edge is the one an 8 gigabyte `VisionFive` 2 could reach: a region ending exactly there is
     /// usable, one a page later is not, and neither is anything a 32-bit descriptor cannot hold.
     #[test]
     fn a_region_the_internal_direct_memory_access_engine_cannot_reach_or_describe_is_refused() {
@@ -811,7 +816,7 @@ mod tests {
     }
 
     /// **The register contract of one transfer**, write by write, on a controller whose firmware
-    /// left `CONTROL_REGISTER` bit 8 and the IDMAC selected (the VisionFive 2's U-Boot hands over `CONTROL_REGISTER` bit 25 set).
+    /// left `CONTROL_REGISTER` bit 8 and the IDMAC selected (the `VisionFive` 2's U-Boot hands over `CONTROL_REGISTER` bit 25 set).
     /// Arming keeps the firmware's bit and sets both DMA bits whatever they were; `BUS_MODE_REGISTER` is
     /// written whole; stopping clears both DMA bits, resets the DMA interface and the FIFO, and
     /// puts the polled thresholds back. A single block finishes on `DTO` alone.
