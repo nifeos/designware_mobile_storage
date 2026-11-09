@@ -20,3 +20,17 @@ jobs:
       targets: aarch64-unknown-none-softfloat riscv64imac-unknown-none-elf x86_64-unknown-none
       # The soak publishes nothing, so the manifest carries publish = false on purpose.
       allow-unpublished: true
+  # The shared check job builds and tests the default features only. The `simulator` feature
+  # exports the simulated controller and card, so it gets the same lint and the same tests, plus
+  # tests/simulator.rs, which uses it from outside the crate as a caller would.
+  simulator:
+    name: simulator feature
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal --component clippy
+      - run: cargo +stable clippy --all-targets --features simulator -- -D warnings
+      - run: cargo +stable test --features simulator

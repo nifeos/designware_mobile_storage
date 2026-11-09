@@ -459,13 +459,13 @@ pub(crate) const DESCRIPTOR_LIST_BASE_PHYSICAL_ADDRESS_REGISTER: u32 = 0x088;
 pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER: u32 = 0x08c;
 /// **Transmit interrupt** (OpenBSD's `SDMMC_IDSTS_TI`): A descriptor without `DIC` finished a
 /// transmit (memory to card).
-#[cfg(test)]
+#[cfg(any(test, feature = "simulator"))]
 #[doc(alias = "transmit interrupt")]
 #[doc(alias = "IDSTS_TI")]
 pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_TRANSMIT_INTERRUPT: u32 = 1 << 0;
 /// **Receive interrupt** (OpenBSD's `SDMMC_IDSTS_RI`): A descriptor without `DIC` finished a
 /// receive (card to memory).
-#[cfg(test)]
+#[cfg(any(test, feature = "simulator"))]
 #[doc(alias = "receive interrupt")]
 #[doc(alias = "IDSTS_RI")]
 pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_RECEIVE_INTERRUPT: u32 = 1 << 1;
@@ -487,13 +487,13 @@ pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_DESCRIPTOR_UNAVAILABLE: u3
 pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_CARD_ERROR_SUMMARY: u32 = 1 << 5;
 /// **Normal interrupt summary** (OpenBSD's `SDMMC_IDSTS_NIS`): normal interrupt summary (`TI` or
 /// `RI`).
-#[cfg(test)]
+#[cfg(any(test, feature = "simulator"))]
 #[doc(alias = "normal interrupt summary")]
 #[doc(alias = "IDSTS_NIS")]
 pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_NORMAL_INTERRUPT_SUMMARY: u32 = 1 << 8;
 /// **Abnormal interrupt summary** (the databook's `AIS` in `IDSTS`, Linux's `SDMMC_IDMAC_INT_AI`):
 /// abnormal interrupt summary: `FBE`, `DU` or `CES`.
-#[cfg(test)]
+#[cfg(any(test, feature = "simulator"))]
 #[doc(alias = "abnormal interrupt summary")]
 #[doc(alias = "AIS")]
 pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ABNORMAL_INTERRUPT_SUMMARY: u32 = 1 << 9;
@@ -516,7 +516,7 @@ pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_INTERRUPT_ENABLE_REGISTER: u32 = 
 pub(crate) const CARD_THRESHOLD_CONTROL_REGISTER: u32 = 0x100;
 /// **Card read threshold enable** (OpenBSD's `SDMMC_CARDTHRCTL_RDTHREN`): enable the card read
 /// threshold, which the driver never does; the sim and tests name it.
-#[cfg(test)]
+#[cfg(any(test, feature = "simulator"))]
 #[doc(alias = "card read threshold enable")]
 #[doc(alias = "CARDTHRCTL_RDTHREN")]
 pub(crate) const CARD_THRESHOLD_CONTROL_READ_THRESHOLD_ENABLE: u32 = 1 << 0;

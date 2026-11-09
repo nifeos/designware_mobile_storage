@@ -51,6 +51,34 @@ access (DMA) region you supply. The region implements
 system-on-chip's constants and `Slot::from_node`. That function decodes one slot from the properties
 of a device-tree node you found. The crate reads no device tree itself.
 
+The `simulator` feature lets your own tests run against the simulated controller and card that
+this crate's tests use, the way `embedded-hal-mock` stands in for `embedded-hal`. It is off by
+default and needs `std`, so turn it on for your tests only. `SimulatedHostController` implements
+`RegisterWindowAndClock`, so it goes wherever your code takes a register window. Choose the card's
+kind and size, fill or check its blocks, fail the next block read, or leave the slot empty.
+`attach_direct_memory_access_region` hands back the memory its IDMAC reaches. A test of the
+`first_sector` function above:
+
+```toml
+[dev-dependencies]
+designware_mobile_storage = { git = "https://github.com/nifeos/designware_mobile_storage", rev = "<commit>", features = ["simulator"] }
+```
+
+```rust,ignore
+use designware_mobile_storage::SimulatedHostController;
+use designware_mobile_storage::sd::CardKind;
+
+#[test]
+fn first_sector_reads_what_the_card_holds() {
+    let mut simulator = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+    simulator.card_blocks_mut()[0][510..].copy_from_slice(&[0x55, 0xaa]);
+    let sector = first_sector(simulator).expect("the simulated card reads");
+    assert_eq!(sector[510..], [0x55, 0xaa]);
+}
+```
+
+The crate's own `tests/simulator.rs` runs this test word for word.
+
 Every error enum implements `Display` and `core::error::Error`. These are `host_controller::Error`,
 `sd::InitializationError`, `sd::BlockTransferError` and `internal_direct_memory_access::Refusal`.
 They and `sd::CardKind` are `#[non_exhaustive]`. A `match` on one needs a wildcard arm, and a later

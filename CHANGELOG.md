@@ -6,6 +6,8 @@ sentence beside it.
 ## Unreleased
 
 - First version.
+- A `simulator` feature, off by default, exports the simulated controller and card so a caller's
+  own tests can run against them.
 
 ## BUGS
 
