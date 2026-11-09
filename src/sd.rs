@@ -23,12 +23,12 @@ use crate::internal_direct_memory_access::DirectMemoryAccessRegion;
 pub(crate) const IDENTIFY_HERTZ: u32 = 400_000;
 /// The transfer clock: default speed, the spec's ceiling for it on SD and the legacy eMMC ceiling
 /// (26 megahertz) rounded down.
-pub const TRANSFER_HERTZ: u32 = 25_000_000;
+pub(crate) const TRANSFER_HERTZ: u32 = 25_000_000;
 /// One block, in bytes.
 pub const BLOCK_BYTES: usize = 512;
 /// How long `ACMD41` or `CMD1` may report busy before the card is declared dead: the SD spec gives
 /// a card one second from the first `ACMD41`.
-pub const POWER_UP_DEADLINE_MICROSECONDS: u64 = 1_000_000;
+pub(crate) const POWER_UP_DEADLINE_MICROSECONDS: u64 = 1_000_000;
 /// The relative card address the host assigns an eMMC with `CMD3`. An SD card proposes its own
 /// instead.
 #[doc(alias = "rca")]
@@ -62,7 +62,7 @@ pub enum InitializationError {
     InterfaceCondition(u32),
     /// Neither `ACMD41` nor `CMD1` was answered: no card, or a card that is not memory.
     NoCard(Error),
-    /// The card stayed busy past [`POWER_UP_DEADLINE_MICROSECONDS`]: the last OCR.
+    /// The card stayed busy past the one-second power-up deadline: the last OCR.
     PowerUp(u32),
     /// `CMD2`, `CMD3`, `CMD9` or `CMD7` failed: the command and the error.
     Identify(u8, Error),
@@ -128,13 +128,25 @@ pub struct Card {
 }
 
 impl Card {
-    /// The command argument that addresses block `logical_block_address`.
+    /// **The command argument that addresses block `logical_block_address`**: the block number on a
+    /// block-addressed card, the block's first byte on a byte-addressed one. `None` when that
+    /// number does not fit the command's 32-bit argument, so a command a caller composes for
+    /// [`HostController::read_data`] or [`HostController::write_data`] never carries a truncated
+    /// address. A range [`read_blocks`] and [`write_blocks`] admit always fits.
     #[must_use]
-    pub const fn block_address_argument(&self, logical_block_address: u64) -> u32 {
-        if self.block_addressed {
-            logical_block_address as u32
+    pub const fn block_address_argument(&self, logical_block_address: u64) -> Option<u32> {
+        let wide_argument = if self.block_addressed {
+            logical_block_address
         } else {
-            (logical_block_address * BLOCK_BYTES as u64) as u32
+            match logical_block_address.checked_mul(BLOCK_BYTES as u64) {
+                Some(first_byte) => first_byte,
+                None => return None,
+            }
+        };
+        if wide_argument > u32::MAX as u64 {
+            None
+        } else {
+            Some(wide_argument as u32)
         }
     }
 
@@ -152,7 +164,7 @@ fn r1_ok(index: u8, r1: u32) -> Result<(), InitializationError> {
 }
 
 /// **Bring up whatever card is in the slot** and leave it selected, in the transfer state, at
-/// [`TRANSFER_HERTZ`]. `maximum_bus_width` is the tree's `bus-width` for the slot (4 on the `VisionFive` 2's SD
+/// default speed, 25 megahertz. `maximum_bus_width` is the tree's `bus-width` for the slot (4 on the `VisionFive` 2's SD
 /// slot, 8 on its eMMC slot).
 ///
 /// # Errors
@@ -496,7 +508,7 @@ impl core::error::Error for BlockTransferError {}
 /// **Can `count` blocks from `logical_block_address` be addressed on `card`?** Inside the card, and
 /// (on a byte-addressed card) inside the four gigabytes a 32-bit byte address reaches.
 #[must_use]
-pub const fn can_address_blocks(
+pub(crate) const fn can_address_blocks(
     card_blocks: u64,
     block_addressed: bool,
     logical_block_address: u64,
@@ -515,7 +527,7 @@ pub const fn can_address_blocks(
     }
 }
 
-fn data_command(card: &Card, logical_block_address: u64, blocks: u32, write: bool) -> Command {
+fn data_command(argument: u32, blocks: u32, write: bool) -> Command {
     let index = match (write, blocks) {
         (false, 1) => command::READ_SINGLE_BLOCK,
         (false, _) => command::READ_MULTIPLE_BLOCK,
@@ -524,7 +536,7 @@ fn data_command(card: &Card, logical_block_address: u64, blocks: u32, write: boo
     };
     Command::with_data(
         index,
-        card.block_address_argument(logical_block_address),
+        argument,
         Response::R1,
         Data {
             block_bytes: BLOCK_BYTES as u32,
@@ -534,7 +546,12 @@ fn data_command(card: &Card, logical_block_address: u64, blocks: u32, write: boo
     )
 }
 
-fn check(len: usize, card: &Card, logical_block_address: u64) -> Result<u32, BlockTransferError> {
+/// The block count and the address argument of a transfer of `len` bytes, once both are admitted.
+fn check(
+    len: usize,
+    card: &Card,
+    logical_block_address: u64,
+) -> Result<(u32, u32), BlockTransferError> {
     if len == 0 || !len.is_multiple_of(BLOCK_BYTES) {
         return Err(BlockTransferError::Length);
     }
@@ -549,7 +566,10 @@ fn check(len: usize, card: &Card, logical_block_address: u64) -> Result<u32, Blo
     {
         return Err(BlockTransferError::Range);
     }
-    Ok(blocks as u32)
+    let Some(argument) = card.block_address_argument(logical_block_address) else {
+        return Err(BlockTransferError::Range);
+    };
+    Ok((blocks as u32, argument))
 }
 
 /// **Read whole blocks from `logical_block_address` into `buffer`**, one command: `CMD17` for one
@@ -565,12 +585,9 @@ pub fn read_blocks<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
     logical_block_address: u64,
     buffer: &mut [u8],
 ) -> Result<(), BlockTransferError> {
-    let blocks = check(buffer.len(), card, logical_block_address)?;
+    let (blocks, argument) = check(buffer.len(), card, logical_block_address)?;
     let r1 = host
-        .read_data(
-            &data_command(card, logical_block_address, blocks, false),
-            buffer,
-        )
+        .read_data(&data_command(argument, blocks, false), buffer)
         .map_err(BlockTransferError::Host)?;
     if r1[0] & R1_ERROR_MASK != 0 {
         return Err(BlockTransferError::Status(r1[0]));
@@ -590,12 +607,9 @@ pub fn write_blocks<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
     logical_block_address: u64,
     buffer: &[u8],
 ) -> Result<(), BlockTransferError> {
-    let blocks = check(buffer.len(), card, logical_block_address)?;
+    let (blocks, argument) = check(buffer.len(), card, logical_block_address)?;
     let r1 = host
-        .write_data(
-            &data_command(card, logical_block_address, blocks, true),
-            buffer,
-        )
+        .write_data(&data_command(argument, blocks, true), buffer)
         .map_err(BlockTransferError::Host)?;
     if r1[0] & R1_ERROR_MASK != 0 {
         return Err(BlockTransferError::Status(r1[0]));
@@ -648,7 +662,7 @@ mod tests {
         let huge = card(1 << 40, true);
         let most = (u32::MAX / BLOCK_BYTES as u32) as usize;
         assert_eq!(most, 8_388_607);
-        assert_eq!(check(most * BLOCK_BYTES, &huge, 0), Ok(most as u32));
+        assert_eq!(check(most * BLOCK_BYTES, &huge, 0), Ok((most as u32, 0)));
         assert_eq!(
             check((most + 1) * BLOCK_BYTES, &huge, 0),
             Err(BlockTransferError::Range)
@@ -657,6 +671,34 @@ mod tests {
             check((most + 2) * BLOCK_BYTES, &huge, 0),
             Err(BlockTransferError::Range)
         );
-        assert_eq!(check(512 * BLOCK_BYTES, &huge, 0), Ok(512));
+        assert_eq!(check(512 * BLOCK_BYTES, &huge, 0), Ok((512, 0)));
+    }
+
+    /// The argument is the block on a block-addressed card and its first byte on a byte-addressed
+    /// one, and `None` once that no longer fits 32 bits, including the logical block addresses at
+    /// and above 2^55 whose byte address does not fit 64 bits either.
+    #[test]
+    fn a_block_address_argument_is_none_once_it_does_not_fit_32_bits() {
+        let blocks = card(1 << 40, true);
+        assert_eq!(blocks.block_address_argument(7), Some(7));
+        assert_eq!(
+            blocks.block_address_argument(u64::from(u32::MAX)),
+            Some(u32::MAX)
+        );
+        assert_eq!(blocks.block_address_argument(1 << 32), None);
+        let bytes = card(1 << 40, false);
+        assert_eq!(bytes.block_address_argument(3), Some(3 * 512));
+        let last = (1 << 32) / BLOCK_BYTES as u64 - 1;
+        assert_eq!(
+            bytes.block_address_argument(last),
+            Some(u32::MAX - (BLOCK_BYTES as u32 - 1))
+        );
+        assert_eq!(bytes.block_address_argument(last + 1), None);
+        assert_eq!(bytes.block_address_argument(1 << 55), None);
+        assert_eq!(bytes.block_address_argument(u64::MAX), None);
+        assert_eq!(
+            check(BLOCK_BYTES, &bytes, last + 1),
+            Err(BlockTransferError::Range)
+        );
     }
 }

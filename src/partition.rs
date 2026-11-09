@@ -8,7 +8,7 @@
 //! the crate root) proves the range never touches a partition or sector 0, for every table.
 
 /// The MBR's last two bytes on a valid table.
-pub const MASTER_BOOT_RECORD_SIGNATURE: [u8; 2] = [0x55, 0xaa];
+pub(crate) const MASTER_BOOT_RECORD_SIGNATURE: [u8; 2] = [0x55, 0xaa];
 /// The partition type a `GUID` partition table (`GPT`) disk's protective MBR carries.
 #[doc(alias = "gpt")]
 pub(crate) const TYPE_PROTECTIVE_GLOBALLY_UNIQUE_IDENTIFIER_PARTITION_TABLE: u8 = 0xee;

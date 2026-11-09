@@ -1,0 +1,3 @@
+# The crate's own name opens the README, which is also the crate root documentation, and the
+# README's title is the package name as plain text. Every other identifier in a doc takes backticks.
+doc-valid-idents = ["..", "designware_mobile_storage"]

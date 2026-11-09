@@ -17,7 +17,27 @@ use crate::registers;
 
 /// **The DMA region**, as the driver reads and writes it. Offsets are bytes from the region's
 /// first byte; an implementation bounds them. A kernel's might be pages in its direct map; the tests'
-/// is memory `simulator` walks too. `designware_ethernet::DirectMemoryAccessRegion`'s shape.
+/// is memory `simulator` walks too.
+///
+/// # Contract
+///
+/// - The bus address and the length stay the same for the region's life. The region starts on a
+///   page (4096 bytes, `PAGE_BYTES`) and holds one page of descriptors, then 1 to [`MAXIMUM_DESCRIPTORS`]
+///   data pages, all below 4 GiB as the controller addresses them; [`InternalDirectMemoryAccess::new`]
+///   refuses anything else.
+/// - The driver keeps every offset inside the region, and the proofs hold it to that.
+/// - [`barrier`](Self::barrier) is called twice in each transfer: after the driver writes the
+///   descriptors and the data, before the register writes that start the controller; and after
+///   the controller has finished, before the driver reads the data back. Between the two the
+///   driver polls each descriptor's own bit with [`read_u32`](Self::read_u32), with no barrier in
+///   between, so that read must see the controller's latest write to the word.
+/// - Where the DMA is coherent with the processor's caches, the accessors are plain loads and
+///   stores and `barrier` is a fence that orders memory accesses against device accesses (such as
+///   `fence iorw, iorw` on RISC-V or `dsb sy` on Arm).
+/// - Where it is not coherent, the region is mapped uncached and `barrier` is that fence. A cached
+///   mapping works only if `barrier` writes the region's dirty lines back to memory and
+///   invalidates them, and [`read_u32`](Self::read_u32) and [`read_bytes`](Self::read_bytes)
+///   invalidate the lines they read first. The driver does no cache maintenance of its own.
 pub trait DirectMemoryAccessRegion {
     /// The region's first byte as the controller's direct memory access engine addresses it: on the
     /// `VisionFive` 2, its physical address. Behind an address translation unit or a bus offset it
@@ -72,7 +92,7 @@ impl DirectMemoryAccessRegion for NoDirectMemoryAccess {
 
 /// A page: the descriptor chain's size, and the most one descriptor's buffer holds here. The
 /// databook's field holds 8191 bytes; a page keeps each buffer inside one page of the region.
-pub(crate) const PAGE_BYTES: u32 = 4096;
+pub const PAGE_BYTES: u32 = 4096;
 /// One 32-bit-address descriptor: four words.
 pub(crate) const DESCRIPTOR_BYTES: u32 = 16;
 /// The most descriptors the chain page holds, and so the most data pages a region may have.
