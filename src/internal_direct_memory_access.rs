@@ -554,7 +554,11 @@ mod tests {
             user_identification: 0,
             queue_threshold: 0,
             card_detect: 0,
-            firmware: [0; 5],
+            host_control: 0,
+            power_enable: 0,
+            clock_divider: 0,
+            clock_enable: 0,
+            card_type: 0,
         };
         h.with_internal_direct_memory_access(
             InternalDirectMemoryAccess::new(memory.clone(), &id).unwrap(),
@@ -610,7 +614,11 @@ mod tests {
             user_identification: 0,
             queue_threshold: 0,
             card_detect: 0,
-            firmware: [0; 5],
+            host_control: 0,
+            power_enable: 0,
+            clock_divider: 0,
+            clock_enable: 0,
+            card_type: 0,
         };
         let visionfive_2 = id(0x00c4_3cc1);
         let new = |base, pages| {

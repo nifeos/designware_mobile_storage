@@ -392,7 +392,11 @@ fn the_direct_memory_access_wait_returns_once_its_deadline_has_passed() {
         user_identification: 0,
         queue_threshold: 0,
         card_detect: 0,
-        firmware: [0; 5],
+        host_control: 0,
+        power_enable: 0,
+        clock_divider: 0,
+        clock_enable: 0,
+        card_type: 0,
     };
     let Ok(engine) = InternalDirectMemoryAccess::new(
         AdversarialRegion {
