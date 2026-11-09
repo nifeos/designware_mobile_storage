@@ -1,0 +1,33 @@
+# The cargo-fuzz targets, in a workspace of their own so that `cargo build` and `cargo test` at the
+# root never build them. They need nightly: `cargo +nightly fuzz run <target>`.
+
+[package]
+name = "designware_mobile_storage-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.designware_mobile_storage]
+path = ".."
+
+[[bin]]
+name = "master_boot_record_parse"
+path = "fuzz_targets/master_boot_record_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "card_identification_and_read"
+path = "fuzz_targets/card_identification_and_read.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
