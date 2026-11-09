@@ -7,9 +7,9 @@ description = "Synopsys DesignWare Mobile Storage Host (dw-mshc) SD and eMMC dri
 license = "(MIT OR Apache-2.0) AND ISC"
 repository = "https://github.com/nifeos/designware_mobile_storage"
 readme = "README.md"
-keywords = ["no-std", "kani", "driver"]
+keywords = ["no-std", "kani", "driver", "sd-card", "emmc"]
 categories = ["no-std", "embedded", "hardware-support"]
-publish = false     # the default; the allowlist lint holds the exception (crates/publish-allowlist.txt)
+publish = false     # publishing is held; the pull request that clears a first release removes this
 
 # no_std for a kernel, std for host tests. It is the whole SD and eMMC driver for the Synopsys
 # DesignWare Mobile Storage Host Controller: the register map, the command encoding, the polled
