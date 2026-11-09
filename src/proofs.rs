@@ -583,7 +583,7 @@ fn sending_a_command_is_total_against_any_controller() {
 
 /// Falsification: replayable `falsifications/proofs.reset_and_the_card_clock_are_total_against_any_controller.patch`
 /// **Reset and the card clock are total against any controller**: a reset and a clock change at
-/// any rate end and panic nowhere, whatever the controller answers, and at the VisionFive 2's
+/// any rate end and panic nowhere, whatever the controller answers, and at the `VisionFive` 2's
 /// 50 megahertz the card runs no faster than asked, or at the slowest rate the divider has when nothing
 /// slower exists.
 ///
