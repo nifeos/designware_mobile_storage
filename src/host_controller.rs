@@ -3,8 +3,8 @@
 //! `dwmmc_pio_mode`, `dwmmc_exec_command` and `dwmmc_transfer_data` (the crate root carries the
 //! notice), with deliberate differences: every wait is a deadline on a clock the caller supplies
 //! rather than a count of `delay(100)`s, nothing sleeps, the interrupt line stays masked, and a
-//! 64-bit FIFO is refused (the VisionFive 2's is measured on the board before anything depends on it).
-//! `HostController<R>` moves every word through the FIFO by MMIO; `HostController<R, D>`, from
+//! 64-bit FIFO is refused (the `VisionFive` 2's is measured on the board before anything depends on it).
+//! `HostController<R>` moves every word through the FIFO by memory-mapped input and output (MMIO); `HostController<R, D>`, from
 //! [`HostController::with_internal_direct_memory_access`], hands each data phase to the controller's DMA
 //! engine ([`crate::internal_direct_memory_access`]). Commands and identification are the same on
 //! both.
@@ -54,7 +54,7 @@ pub enum Error {
     DataTimeout(u8, u32, u32),
     /// The buffer is not the size the command's data phase says.
     BufferSize,
-    /// The card held DAT0 busy past the deadline.
+    /// The card held `DAT0` busy past the deadline.
     Busy,
     /// The IDMAC stopped on a bus error or a descriptor it did not own: the index and `IDSTS`.
     DirectMemoryAccess(u8, u32),
@@ -136,7 +136,7 @@ pub(crate) const DATA_DEADLINE_MICROSECONDS: u64 = 500_000;
 /// ```
 /// use designware_mobile_storage::host_controller::{clock_divider, card_clock_hertz};
 ///
-/// // the VisionFive 2's controllers run from 50 MHz (`assigned-clock-rates` in mainline and the vendor branch head).
+/// // the VisionFive 2's controllers run from 50 megahertz (`assigned-clock-rates` in mainline and the vendor branch head).
 /// let d = clock_divider(50_000_000, 400_000).unwrap();
 /// assert_eq!(d, 63);
 /// assert!(card_clock_hertz(50_000_000, d) <= 400_000);
@@ -212,8 +212,8 @@ pub struct HostController<
 impl<R: RegisterWindowAndClock> HostController<R> {
     /// **Take a controller**, reading its identity and touching nothing.
     ///
-    /// `base_hertz` is the rate of the clock the controller divides (the tree's `ciu`, 50 MHz on
-    /// the VisionFive 2), and `queue_depth_words` the tree's `fifo-depth` if it has one, in 32-bit
+    /// `base_hertz` is the rate of the clock the controller divides (the tree's `ciu`, 50 megahertz on
+    /// the `VisionFive` 2), and `queue_depth_words` the tree's `fifo-depth` if it has one, in 32-bit
     /// words; without it the depth is read from `FIFOTH`'s reset value, as OpenBSD does. Refuses a
     /// FIFO that is not 32 bits wide, so every depth this driver holds counts 32-bit words.
     ///
@@ -360,7 +360,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         Ok(())
     }
 
-    /// Power slot 0. The JH7110 ties the card supply on the board, so on the VisionFive 2 this bit is what
+    /// Power slot 0. The JH7110 ties the card supply on the board, so on the `VisionFive` 2 this bit is what
     /// U-Boot already set; written anyway, because a controller fresh from reset may not have it.
     pub(crate) fn power_on(&mut self) {
         self.registers.write(registers::POWER_ENABLE_REGISTER, 1);
@@ -380,7 +380,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
 
     /// **Run the card clock at no more than `hertz`**, returning the rate it actually runs at.
     /// OpenBSD's sequence: clock off, divider, update; clock on, update. Low-power gating is on,
-    /// since nothing here is an SDIO card.
+    /// since nothing here is an `SDIO` card.
     ///
     /// # Errors
     ///
@@ -412,7 +412,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             .write(registers::CARD_TYPE_REGISTER, card_type);
     }
 
-    /// **Wait until the card releases DAT0**, after an R1b command or a write.
+    /// **Wait until the card releases `DAT0`**, after an R1b command or a write.
     ///
     /// # Errors
     ///
@@ -652,7 +652,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         Ok((status, raw_interrupt_status))
     }
 
-    /// Wait for data-transfer-over, and for the automatic CMD12 after a multi-block transfer.
+    /// Wait for data-transfer-over, and for the automatic `CMD12` after a multi-block transfer.
     fn finish(&mut self, command: &Command) -> Result<(), Error> {
         let mut raw_interrupt_status = 0;
         let want = match command.data {
@@ -910,7 +910,7 @@ mod tests {
     }
 
     /// Before a data command the FIFO is reset and the reset waited for, and the card read
-    /// threshold is left off: a 512-byte one in the VisionFive 2's 32-word FIFO is what overran its first
+    /// threshold is left off: a 512-byte one in the `VisionFive` 2's 32-word FIFO is what overran its first
     /// read. Bit 8 of `CONTROL_REGISTER`, left by firmware, makes a wait that tested anything but the reset
     /// bits never finish.
     #[test]
@@ -1113,7 +1113,7 @@ mod tests {
         assert!(h.registers_mut().now_microseconds() - start < DATA_DEADLINE_MICROSECONDS);
     }
 
-    /// A multi-block transfer is over when the automatic CMD12 is, which can land after `DTO`.
+    /// A multi-block transfer is over when the automatic `CMD12` is, which can land after `DTO`.
     #[test]
     fn a_multi_block_transfer_waits_for_the_automatic_stop() {
         let mut h = take(SimulatedHostController::new(

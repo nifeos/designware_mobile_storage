@@ -1,4 +1,4 @@
-Falsifies `designware_mobile_storage::proofs::an_admitted_range_is_inside_the_card_and_the_address`.
+Falsifies `designware_mobile_storage::proofs::an_admitted_range_is_inside_the_card_and_the_command_argument`.
 
 The defect: a byte-addressed card gets the block-addressed card's limit, so a block past 4 GB of
 bytes is admitted and its byte address wraps in the 32-bit argument: the read or write lands near

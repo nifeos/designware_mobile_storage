@@ -1,4 +1,3 @@
-
 use crate::card::{CardSpecificData, extended_card_specific_data_sectors, extract_bits};
 use crate::command::{Command, Data, Response};
 use crate::host_controller::{
@@ -59,12 +58,12 @@ fn a_queue_step_never_overruns_the_queue_or_the_buffer() {
     }
 }
 
-/// Falsification: replayable `falsifications/proofs.an_admitted_range_is_inside_the_card_and_the_address.patch`
+/// Falsification: replayable `falsifications/proofs.an_admitted_range_is_inside_the_card_and_the_command_argument.patch`
 /// A range the driver admits is inside the card and inside what the command's 32-bit address
 /// can name.
 ///
 #[kani::proof]
-fn an_admitted_range_is_inside_the_card_and_the_address() {
+fn an_admitted_range_is_inside_the_card_and_the_command_argument() {
     let blocks: u64 = kani::any();
     let block_addressed: bool = kani::any();
     let logical_block_address: u64 = kani::any();
@@ -89,10 +88,10 @@ fn an_admitted_range_is_inside_the_card_and_the_address() {
 fn a_chain_describes_its_bytes_inside_the_region() {
     let pages: u32 = kani::any();
     kani::assume((1..=MAXIMUM_DESCRIPTORS).contains(&pages));
-    let region_direct_memory_access_address: u32 = kani::any();
-    kani::assume(region_direct_memory_access_address.is_multiple_of(PAGE_BYTES));
+    let region_direct_memory_access_bus_address: u32 = kani::any();
+    kani::assume(region_direct_memory_access_bus_address.is_multiple_of(PAGE_BYTES));
     kani::assume(
-        u64::from(region_direct_memory_access_address) + u64::from((pages + 1) * PAGE_BYTES)
+        u64::from(region_direct_memory_access_bus_address) + u64::from((pages + 1) * PAGE_BYTES)
             <= 1 << 32,
     );
     let bytes: u32 = kani::any();
@@ -102,11 +101,11 @@ fn a_chain_describes_its_bytes_inside_the_region() {
     let i: u32 = kani::any();
     kani::assume(i < count);
     let [word_0, size, buffer, next] =
-        descriptor(region_direct_memory_access_address, i, count, bytes);
+        descriptor(region_direct_memory_access_bus_address, i, count, bytes);
     assert!((1..=PAGE_BYTES).contains(&size));
     assert!(
-        buffer >= region_direct_memory_access_address + PAGE_BYTES
-            && buffer - region_direct_memory_access_address + size <= (pages + 1) * PAGE_BYTES
+        buffer >= region_direct_memory_access_bus_address + PAGE_BYTES
+            && buffer - region_direct_memory_access_bus_address + size <= (pages + 1) * PAGE_BYTES
     );
     if i + 1 == count {
         assert!(i * PAGE_BYTES + size == bytes);
@@ -114,7 +113,7 @@ fn a_chain_describes_its_bytes_inside_the_region() {
     } else {
         assert!(
             size == PAGE_BYTES
-                && next == region_direct_memory_access_address + (i + 1) * DESCRIPTOR_BYTES
+                && next == region_direct_memory_access_bus_address + (i + 1) * DESCRIPTOR_BYTES
         );
         assert!(word_0 & crate::internal_direct_memory_access::DESCRIPTOR_LAST == 0);
     }
@@ -295,12 +294,12 @@ impl RegisterWindowAndClock for AdversarialWindowAndClock {
 /// 4 GiB, so a chain is one or two descriptors. Each access asserts that the driver asked for
 /// bytes inside the region, which the trait leaves the implementation to bound.
 struct AdversarialRegion {
-    direct_memory_access_address: u64,
+    direct_memory_access_bus_address: u64,
 }
 
 impl DirectMemoryAccessRegion for AdversarialRegion {
-    fn direct_memory_access_address(&self) -> u64 {
-        self.direct_memory_access_address
+    fn direct_memory_access_bus_address(&self) -> u64 {
+        self.direct_memory_access_bus_address
     }
 
     fn bytes(&self) -> u32 {
@@ -382,10 +381,10 @@ fn the_direct_memory_access_wait_returns_once_its_deadline_has_passed() {
         past_from + count as usize,
     );
     let host = adversarial_host(window);
-    let direct_memory_access_address: u64 = kani::any();
+    let direct_memory_access_bus_address: u64 = kani::any();
     kani::assume(
-        direct_memory_access_address.is_multiple_of(u64::from(PAGE_BYTES))
-            && direct_memory_access_address < 1 << 31,
+        direct_memory_access_bus_address.is_multiple_of(u64::from(PAGE_BYTES))
+            && direct_memory_access_bus_address < 1 << 31,
     );
     let identity = crate::host_controller::Identity {
         version_identification: 0,
@@ -397,7 +396,7 @@ fn the_direct_memory_access_wait_returns_once_its_deadline_has_passed() {
     };
     let Ok(engine) = InternalDirectMemoryAccess::new(
         AdversarialRegion {
-            direct_memory_access_address,
+            direct_memory_access_bus_address,
         },
         &identity,
     ) else {
@@ -427,7 +426,7 @@ fn the_direct_memory_access_wait_returns_once_its_deadline_has_passed() {
 /// Falsification: replayable `falsifications/proofs.the_clock_divider_is_total.patch`
 /// **The card clock divider is total**: for any base and target it divides by no zero, overflows
 /// nothing and panics nowhere, and the card clock it names is computed the same way. That the card
-/// clock stays at or below the target is proved at a 50 MHz base by
+/// clock stays at or below the target is proved at a 50 megahertz base by
 /// `reset_and_the_card_clock_are_total_against_any_controller`: for any base the comparison makes
 /// the solver build both 32-bit divisions, which ran past five minutes.
 ///
@@ -584,8 +583,8 @@ fn sending_a_command_is_total_against_any_controller() {
 
 /// Falsification: replayable `falsifications/proofs.reset_and_the_card_clock_are_total_against_any_controller.patch`
 /// **Reset and the card clock are total against any controller**: a reset and a clock change at
-/// any rate end and panic nowhere, whatever the controller answers, and at the VisionFive 2's
-/// 50 MHz the card runs no faster than asked, or at the slowest rate the divider has when nothing
+/// any rate end and panic nowhere, whatever the controller answers, and at the `VisionFive` 2's
+/// 50 megahertz the card runs no faster than asked, or at the slowest rate the divider has when nothing
 /// slower exists.
 ///
 #[kani::proof]
@@ -662,10 +661,10 @@ fn adversarial_direct_memory_access_host()
         kani::assume(false);
         unreachable!()
     };
-    let direct_memory_access_address: u64 = kani::any();
+    let direct_memory_access_bus_address: u64 = kani::any();
     let Ok(engine) = InternalDirectMemoryAccess::new(
         AdversarialRegion {
-            direct_memory_access_address,
+            direct_memory_access_bus_address,
         },
         &identity,
     ) else {
@@ -796,7 +795,7 @@ fn configuring_a_card_is_total_against_any_controller() {
 }
 
 /// Where a card stands in bring-up: the states of the SD Physical Layer Simplified
-/// Specification's card identification mode (figure 4-1, version 9.10) and JEDEC JESD84's, which
+/// Specification's card identification mode (figure 4-1, version 9.10) and `JEDEC JESD84`'s, which
 /// `identify` walks in this order, and `Unknown` for a card whose answer the controller garbled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CardState {
@@ -1165,12 +1164,12 @@ impl RegisterWindowAndClock for ModeledCard {
 /// done at the first look, and each access asserts it is inside the region, as
 /// [`AdversarialRegion`]'s do. The data the card sends is not what these harnesses are about.
 struct ClosedRegion {
-    direct_memory_access_address: u64,
+    direct_memory_access_bus_address: u64,
 }
 
 impl DirectMemoryAccessRegion for ClosedRegion {
-    fn direct_memory_access_address(&self) -> u64 {
-        self.direct_memory_access_address
+    fn direct_memory_access_bus_address(&self) -> u64 {
+        self.direct_memory_access_bus_address
     }
 
     fn bytes(&self) -> u32 {
@@ -1209,10 +1208,10 @@ fn modeled_card_host() -> HostController<ModeledCard, ClosedRegion> {
         kani::assume(false);
         unreachable!()
     };
-    let direct_memory_access_address: u64 = kani::any();
+    let direct_memory_access_bus_address: u64 = kani::any();
     let Ok(engine) = InternalDirectMemoryAccess::new(
         ClosedRegion {
-            direct_memory_access_address,
+            direct_memory_access_bus_address,
         },
         &identity,
     ) else {
@@ -1320,7 +1319,7 @@ fn a_bring_up_starts_over_from_whatever_a_failed_one_left() {
 }
 
 /// **A card that keeps reporting busy at a clock that runs forward from any start, at any pace.**
-/// It answers every command at once and never holds DAT0 (data line 0) busy. An SD card answers
+/// It answers every command at once and never holds `DAT0` (data line 0) busy. An SD card answers
 /// `CMD55` and `ACMD41`; an eMMC is silent to `CMD55` and answers `CMD0` and `CMD1`. Every OCR it
 /// reports has the busy bit clear. The clock never goes backward, and from reading `past_from` on
 /// each reading is more than the one-second power-up deadline past the one before. It counts the

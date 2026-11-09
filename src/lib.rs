@@ -1,5 +1,5 @@
 #![cfg_attr(not(test), no_std)]
-//! The Synopsys `DesignWare` Mobile Storage Host Controller, as pure logic: the VisionFive 2's
+//! The Synopsys `DesignWare` Mobile Storage Host Controller, as pure logic: the `VisionFive` 2's
 //! microSD slot and eMMC (embedded multimedia card) socket. The whole driver sits behind
 //! [`host_controller::RegisterWindowAndClock`], a window and a clock; a kernel implements it over a
 //! mapped window and nothing more, so every sequence is tested against `simulator` on a host.
@@ -8,7 +8,7 @@
 //! and [`partition`].
 
 //! Adapted from OpenBSD's `sys/dev/fdt/dwmmc.c` revision 1.33 (register map, reset, clock, bus
-//! width, command flags and the polled FIFO (first in, first out) transfer), under the Internet
+//! width, command flags and the polled first input, first output (FIFO) transfer), under the Internet
 //! Systems Consortium (ISC) license, whose notice must be kept. Card identification ([`sd`])
 //! follows the SD specification's sequence and takes only the order of its addressing commands from
 //! OpenBSD's `sys/dev/sdmmc/sdmmc_mem.c` (`openbsd/src@21ea132db7ea`, read 2026-11-04 UTC); none of
@@ -34,11 +34,11 @@
 //! ```
 
 //! # BUGS
-//! - The polled path has read the VisionFive 2's card; the IDMAC (internal direct memory access
+//! - The polled path has read the `VisionFive` 2's card; the IDMAC (internal direct memory access
 //!   controller) path has run only against `simulator`, until a test on silicon measures it.
 //! - The IDMAC moves at most its region's data pages per command and copies once each way
 //!   through them.
-//! - Default speed only (25 MHz, 4-bit SD, 1-bit eMMC); no tuning, no 8-bit bus. Polled, with
+//! - Default speed only (25 megahertz, 4-bit SD, 1-bit eMMC); no tuning, no 8-bit bus. Polled, with
 //!   `INTMASK` zero. A 64-bit FIFO is refused. No card-detect or write-protect handling.
 
 pub mod card;

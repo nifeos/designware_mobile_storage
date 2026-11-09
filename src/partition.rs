@@ -1,15 +1,15 @@
-//! Where on a card a write cannot hurt: the MBR, and the gap before its first partition. The VisionFive 2
-//! boots from its microSD card, one FAT32 partition
+//! Where on a card a write cannot hurt: the MBR, and the gap before its first partition. The `VisionFive` 2
+//! boots from its microSD card, one `FAT32` partition
 //! in an MBR, so the only sectors this crate names for a write are before the first partition and
 //! after sector 0: the alignment gap no filesystem owns and U-Boot does not read when the board
-//! boots from its QSPI flash, as the VisionFive 2 does. A card with no MBR signature, a protective MBR (GPT,
+//! boots from its `QSPI` flash, as the `VisionFive` 2 does. A card with no MBR signature, a protective MBR (`GPT`,
 //! whose header and table live in that gap), no partitions, or a first partition at sector 1 gets
 //! no scratch range, and a caller that wants a scratch range gets none and must refuse to write. A Kani harness (`proofs` in
 //! the crate root) proves the range never touches a partition or sector 0, for every table.
 
 /// The MBR's last two bytes on a valid table.
 pub const MASTER_BOOT_RECORD_SIGNATURE: [u8; 2] = [0x55, 0xaa];
-/// The partition type a GUID partition table (GPT) disk's protective MBR carries.
+/// The partition type a `GUID` partition table (`GPT`) disk's protective MBR carries.
 #[doc(alias = "gpt")]
 pub(crate) const TYPE_PROTECTIVE_GLOBALLY_UNIQUE_IDENTIFIER_PARTITION_TABLE: u8 = 0xee;
 
@@ -108,7 +108,7 @@ impl MasterBootRecord {
     ///
     /// # Examples
     ///
-    /// A write test on the VisionFive 2's boot card may only land before the first partition:
+    /// A write test on the `VisionFive` 2's boot card may only land before the first partition:
     ///
     /// ```
     /// use designware_mobile_storage::partition::{PartitionEntry, MasterBootRecord};
@@ -201,7 +201,7 @@ mod tests {
     }
 
     /// Every byte of the start and length words is read, little-endian, from its own entry: the
-    /// CHS bytes between them are not.
+    /// cylinder head sector (CHS) bytes between them are not.
     #[test]
     fn an_entry_is_read_from_all_four_bytes_of_each_word() {
         let mut s = sector(&[(0, 0, 0), (0x83, 0x1234_5678, 0x0abc_def0)]);

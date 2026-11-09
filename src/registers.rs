@@ -46,7 +46,7 @@ pub(crate) const CONTROL_INTERRUPT_ENABLE: u32 = 1 << 4;
 #[doc(alias = "direct memory access enable")]
 #[doc(alias = "CTRL_DMA_ENABLE")]
 pub(crate) const CONTROL_DIRECT_MEMORY_ACCESS_ENABLE: u32 = 1 << 5;
-/// **Use internal DMAC** (OpenBSD's `SDMMC_CTRL_USE_INTERNAL_DMAC`): use the controller's own
+/// **Use internal `DMAC`** (OpenBSD's `SDMMC_CTRL_USE_INTERNAL_DMAC`): use the controller's own
 /// descriptor-walking DMA (IDMAC) rather than an external one.
 #[doc(alias = "use internal direct memory access controller")]
 #[doc(alias = "CTRL_USE_INTERNAL_DMAC")]
@@ -88,7 +88,7 @@ pub(crate) const CLOCK_ENABLE_REGISTER: u32 = 0x010;
 #[doc(alias = "CLKENA_CCLK_ENABLE")]
 pub(crate) const CLOCK_ENABLE_CARD_CLOCK: u32 = 1 << 0;
 /// **Card clock low-power mode** (OpenBSD's `SDMMC_CLKENA_CCLK_LOW_POWER`): stop the card clock
-/// while the bus is idle. Memory cards only; an SDIO card needs the clock to signal its interrupt.
+/// while the bus is idle. Memory cards only; an `SDIO` card needs the clock to signal its interrupt.
 #[doc(alias = "card clock low power")]
 #[doc(alias = "CLKENA_CCLK_LOW_POWER")]
 pub(crate) const CLOCK_ENABLE_CARD_CLOCK_LOW_POWER: u32 = 1 << 16;
@@ -155,12 +155,12 @@ pub(crate) const COMMAND_USE_HOLD_REGISTER: u32 = 1 << 29;
 #[doc(alias = "CMD_UPDATE_CLOCK_REGISTERS_ONLY")]
 pub(crate) const COMMAND_UPDATE_CLOCK_REGISTERS_ONLY: u32 = 1 << 21;
 /// **Send initialization** (OpenBSD's `SDMMC_CMD_SEND_INITIALIZATION`): send 80 clocks of
-/// initialization sequence before this command. CMD0 only.
+/// initialization sequence before this command. `CMD0` only.
 #[doc(alias = "send initialization")]
 #[doc(alias = "CMD_SEND_INITIALIZATION")]
 pub const COMMAND_SEND_INITIALIZATION: u32 = 1 << 15;
 /// **Stop or abort command** (OpenBSD's `SDMMC_CMD_STOP_ABORT_CMD`): this command stops a data
-/// transfer in progress (CMD12).
+/// transfer in progress (`CMD12`).
 #[doc(alias = "stop or abort command")]
 #[doc(alias = "CMD_STOP_ABORT_CMD")]
 pub(crate) const COMMAND_STOP_OR_ABORT: u32 = 1 << 14;
@@ -169,7 +169,7 @@ pub(crate) const COMMAND_STOP_OR_ABORT: u32 = 1 << 14;
 #[doc(alias = "wait for previous data")]
 #[doc(alias = "CMD_WAIT_PRVDATA_COMPLETE")]
 pub(crate) const COMMAND_WAIT_FOR_PREVIOUS_DATA_COMPLETE: u32 = 1 << 13;
-/// **Send auto stop** (OpenBSD's `SDMMC_CMD_SEND_AUTO_STOP`): send CMD12 automatically when the
+/// **Send auto stop** (OpenBSD's `SDMMC_CMD_SEND_AUTO_STOP`): send `CMD12` automatically when the
 /// byte count is reached.
 #[doc(alias = "send automatic stop")]
 #[doc(alias = "CMD_SEND_AUTO_STOP")]
@@ -276,7 +276,7 @@ pub(crate) const RAW_INTERRUPT_HARDWARE_LOCKED_WRITE_ERROR: u32 = 1 << 12;
 #[doc(alias = "start bit error")]
 #[doc(alias = "RINTSTS_SBE")]
 pub(crate) const RAW_INTERRUPT_START_BIT_ERROR: u32 = 1 << 13;
-/// **Auto command done** (OpenBSD's `SDMMC_RINTSTS_ACD`): auto command done: the automatic CMD12
+/// **Auto command done** (OpenBSD's `SDMMC_RINTSTS_ACD`): auto command done: the automatic `CMD12`
 /// finished.
 #[doc(alias = "automatic command done")]
 #[doc(alias = "RINTSTS_ACD")]
@@ -316,14 +316,14 @@ pub(crate) const RAW_INTERRUPT_DATA_TIMEOUT_MASK: u32 =
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
 const _: () =
     assert!(RAW_INTERRUPT_DATA_ERROR_MASK + RAW_INTERRUPT_DATA_TIMEOUT_MASK == 0x0000_be80);
-/// Every bit below the SDIO interrupts, which is what a clear writes.
+/// Every bit below the `SDIO` interrupts, which is what a clear writes.
 pub(crate) const RAW_INTERRUPT_ALL_MASK: u32 = 0xffff;
 
 /// **Status Register** (OpenBSD's `SDMMC_STATUS`): FIFO count, busy, command state.
 #[doc(alias = "status register")]
 #[doc(alias = "STATUS")]
 pub const STATUS_REGISTER: u32 = 0x048;
-/// **Data busy** (OpenBSD's `SDMMC_STATUS_DATA_BUSY`): the card is holding DAT0 low (busy after a
+/// **Data busy** (OpenBSD's `SDMMC_STATUS_DATA_BUSY`): the card is holding `DAT0` low (busy after a
 /// write or an R1b command).
 #[doc(alias = "data busy")]
 pub(crate) const STATUS_DATA_BUSY: u32 = 1 << 9;
@@ -402,12 +402,12 @@ pub(crate) const CARD_DETECT_REGISTER: u32 = 0x050;
 #[doc(alias = "write protect register")]
 #[doc(alias = "WRTPRT")]
 pub const WRITE_PROTECT_REGISTER: u32 = 0x054;
-/// **Transferred CIU Card Byte Count Register** (OpenBSD's `SDMMC_TCBCNT`): bytes the card
+/// **Transferred `CIU` Card Byte Count Register** (OpenBSD's `SDMMC_TCBCNT`): bytes the card
 /// interface has moved in the current data phase.
 #[doc(alias = "transferred card byte count")]
 #[doc(alias = "TCBCNT")]
 pub const TRANSFERRED_CARD_BYTE_COUNT_REGISTER: u32 = 0x05c;
-/// **Transferred Host to BIU-FIFO Byte Count Register** (OpenBSD's `SDMMC_TBBCNT`): bytes moved
+/// **Transferred Host to `BIU`-FIFO Byte Count Register** (OpenBSD's `SDMMC_TBBCNT`): bytes moved
 /// between the host and the FIFO in the current data phase.
 #[doc(alias = "transferred host byte count")]
 #[doc(alias = "TBBCNT")]
@@ -428,7 +428,7 @@ pub(crate) const VERSION_IDENTIFICATION_REGISTER: u32 = 0x06c;
 #[doc(alias = "HCON")]
 pub(crate) const HARDWARE_CONFIGURATION_REGISTER: u32 = 0x070;
 /// **Ultra High Speed mode register** (OpenBSD's `SDMMC_UHS_REG`, databook `UHS_REG`, offset 0x74;
-/// Linux's `SDMMC_UHS_REG`): 1.8 V select and DDR mode per card. Per slot, DDR mode is bit 16 and
+/// Linux's `SDMMC_UHS_REG`): 1.8 V select and double data rate (DDR) mode per card. Per slot, DDR mode is bit 16 and
 /// 1.8 V signaling is bit 0.
 #[doc(alias = "uhs")]
 #[doc(alias = "ultra_high_speed")]
@@ -473,7 +473,7 @@ pub(crate) const POLL_DEMAND_REGISTER: u32 = 0x084;
 #[doc(alias = "descriptor list base address")]
 #[doc(alias = "DBADDR")]
 pub(crate) const DESCRIPTOR_LIST_BASE_PHYSICAL_ADDRESS_REGISTER: u32 = 0x088;
-/// **Internal DMAC Status Register** (Linux's `SDMMC_IDSTS`, OpenBSD's `SDMMC_IDSTS32`): write one
+/// **Internal `DMAC` Status Register** (Linux's `SDMMC_IDSTS`, OpenBSD's `SDMMC_IDSTS32`): write one
 /// to clear. Raw: set whatever `IDINTEN` holds. The driver reads only its error bits; the
 /// completion bits are `simulator`'s, and the tests'.
 #[doc(alias = "internal direct memory access status register")]
@@ -526,7 +526,7 @@ pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ERROR_MASK: u32 =
         | INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_CARD_ERROR_SUMMARY;
 /// Every write-one-to-clear bit of `IDSTS`, bits 9:0.
 pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ALL_MASK: u32 = 0x3ff;
-/// **Internal DMAC Interrupt Enable Register** (Linux's `SDMMC_IDINTEN`, OpenBSD's
+/// **Internal `DMAC` Interrupt Enable Register** (Linux's `SDMMC_IDINTEN`, OpenBSD's
 /// `SDMMC_IDINTEN32`): zero: this driver polls, as it does `RINTSTS`.
 #[doc(alias = "internal direct memory access interrupt enable register")]
 #[doc(alias = "IDINTEN")]
@@ -557,7 +557,7 @@ pub(crate) const CARD_THRESHOLD_CONTROL_READ_THRESHOLD_ENABLE: u32 = 1 << 0;
 /// before it put the data FIFO at `0x100`, from it on at `0x200`.
 #[doc(alias = "release 2.40a")]
 #[doc(alias = "DW_MMC_240A")]
-pub(crate) const RELEASE_2_40A: u32 = 0x240a;
+pub(crate) const RELEASE_2_40A_VALUE: u32 = 0x240a;
 
 /// **Where the data FIFO is**, given `VERID`: `0x200` from release 2.40a, `0x100` before. Linux's
 /// `dw_mci_probe` makes the same test; OpenBSD assumes `0x200` and so supports only the later
@@ -566,7 +566,7 @@ pub(crate) const RELEASE_2_40A: u32 = 0x240a;
 #[doc(alias = "fifo")]
 #[must_use]
 pub const fn queue_offset(version_identification: u32) -> u32 {
-    if version_identification & 0xffff < RELEASE_2_40A {
+    if version_identification & 0xffff < RELEASE_2_40A_VALUE {
         0x100
     } else {
         0x200
@@ -589,7 +589,7 @@ pub const fn queue_width_bytes(hardware_configuration: u32) -> Option<u32> {
 }
 
 /// **Does the IDMAC use 64-bit addresses?** `HCON` bit 27. Changes the layout of every register
-/// from `0x88` up and doubles the descriptor, so the IDMAC path refuses it; the VisionFive 2's is clear.
+/// from `0x88` up and doubles the descriptor, so the IDMAC path refuses it; the `VisionFive` 2's is clear.
 #[must_use]
 pub const fn uses_64_bit_direct_memory_access(hardware_configuration: u32) -> bool {
     hardware_configuration & (1 << 27) != 0
@@ -597,7 +597,7 @@ pub const fn uses_64_bit_direct_memory_access(hardware_configuration: u32) -> bo
 
 /// **The controller's external DMA interface**, `HCON` bits 17:16: 0 is none, 1 Synopsys' own
 /// `DW_DMA`, 2 a generic DMA handshake, 3 a non-Synopsys one. An IDMAC is built only into a
-/// controller that reads 0 here, which is how Linux's `dw_mci_probe` decides to use it. The VisionFive 2
+/// controller that reads 0 here, which is how Linux's `dw_mci_probe` decides to use it. The `VisionFive` 2
 /// reads 0, and its firmware reads the card through the IDMAC (`CONTROL_REGISTER` bit 25 as it hands over).
 #[must_use]
 pub(crate) const fn direct_memory_access_interface(hardware_configuration: u32) -> u32 {
@@ -632,7 +632,7 @@ mod tests {
     }
 
     /// The burst field is an encoding, not a count, and the IDMAC moves a burst at a time: a burst
-    /// that does not divide the FIFO's free half would overrun it. Depth 32 is the VisionFive 2's tree; 48
+    /// that does not divide the FIFO's free half would overrun it. Depth 32 is the `VisionFive` 2's tree; 48
     /// leaves a free half of 24, which 16 does not divide.
     #[test]
     fn the_direct_memory_access_burst_divides_a_block_and_the_free_half_of_the_queue() {
