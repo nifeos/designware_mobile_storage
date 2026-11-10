@@ -1,4 +1,4 @@
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(test, feature = "simulator")), no_std)]
 #![doc = include_str!("../README.md")]
 
 // Adapted from OpenBSD's `sys/dev/fdt/dwmmc.c` revision 1.33 (register map, reset, clock, bus
@@ -36,8 +36,16 @@ pub mod partition;
 pub mod registers;
 pub mod sd;
 
-#[cfg(test)]
+// The simulation and every knob the crate's own tests turn; `exported_simulator` wraps the part a
+// caller's tests may use, so the knobs the feature leaves private are unused outside the tests.
+#[cfg(any(test, feature = "simulator"))]
+#[cfg_attr(not(test), allow(dead_code))]
 mod simulator;
+
+#[cfg(feature = "simulator")]
+mod exported_simulator;
+#[cfg(feature = "simulator")]
+pub use exported_simulator::{SimulatedDirectMemoryAccessRegion, SimulatedHostController};
 
 #[cfg(test)]
 mod tests;
