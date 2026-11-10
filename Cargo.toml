@@ -21,6 +21,16 @@ publish = false     # publishing is held; the pull request that clears a first r
 # No dependencies: the device-tree walk and the process layout around this driver are the
 # caller's.
 
+[features]
+# Off by default. Exports `SimulatedHostController`, the simulated controller and card the crate's
+# own tests run against, so a program that drives this crate can run its tests against it too. It
+# needs `std`, so the crate is `no_std` only without it.
+simulator = []
+
+[[test]]
+name = "simulator"
+required-features = ["simulator"]
+
 [lints.rust]
 # `cfg(kani)` is set by the Kani model checker, which proves this crate's harnesses.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
