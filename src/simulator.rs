@@ -254,6 +254,23 @@ pub struct SimulatedHostController {
     pub direct_memory_access_corrupts: bool,
     /// The direction of the last data command: the way the IDMAC moves words.
     direct_memory_access_write: bool,
+    /// The bus width an eMMC drives: 1 after `CMD0`, then what `CMD6` wrote to `BUS_WIDTH`.
+    multimedia_card_bus_width: u8,
+    /// An eMMC's `HS_TIMING`: 0 after `CMD0`, then what `CMD6` wrote.
+    multimedia_card_high_speed_timing: u8,
+    /// The next `CMD13` reports the switch error bit.
+    switch_error_pending: bool,
+    /// An eMMC acknowledges every `CMD6` and changes nothing: a card that ignores the write.
+    pub switch_ignored: bool,
+    /// An eMMC refuses every `CMD6`: the next status carries the switch error bit.
+    pub switch_refused: bool,
+    /// An eMMC holds `DAT0` low forever after `CMD6`.
+    pub switch_busy_forever: bool,
+    /// The card type byte of an eMMC's `EXT_CSD` (196): high speed at 26 and 52 megahertz.
+    pub multimedia_card_type: u8,
+    /// Set when a command went to an eMMC on the undivided base clock (above 26 megahertz at the
+    /// tests' 50 megahertz base) while its `HS_TIMING` was still default.
+    pub fast_clock_before_high_speed: bool,
 }
 
 /// The `VERID` the simulation reports: release 2.90a, which puts the FIFO at `0x200`.
@@ -318,6 +335,14 @@ impl SimulatedHostController {
             direct_memory_access_words_per_step: None,
             direct_memory_access_corrupts: false,
             direct_memory_access_write: false,
+            multimedia_card_bus_width: 1,
+            multimedia_card_high_speed_timing: 0,
+            switch_error_pending: false,
+            switch_ignored: false,
+            switch_refused: false,
+            switch_busy_forever: false,
+            multimedia_card_type: 0x03,
+            fast_clock_before_high_speed: false,
         };
         s.registers[(registers::VERSION_IDENTIFICATION_REGISTER / 4) as usize] =
             SIMULATED_VERSION_IDENTIFICATION;
@@ -446,6 +471,8 @@ impl SimulatedHostController {
             (0, _, _) => {
                 self.state = State::Idle;
                 self.power_up_polls = 0;
+                self.multimedia_card_bus_width = 1;
+                self.multimedia_card_high_speed_timing = 0;
                 None
             }
             (8, false, CardKind::SdHighCapacity | CardKind::SdVersion2)
@@ -496,6 +523,14 @@ impl SimulatedHostController {
                 self.state = State::Transfer;
                 short(r)
             }
+            (6, false, CardKind::MultimediaCard) if self.state == State::Transfer => {
+                self.switch(argument);
+                short(self.r1())
+            }
+            (13, false, CardKind::MultimediaCard) if self.state == State::Transfer => {
+                let switch_error = core::mem::replace(&mut self.switch_error_pending, false);
+                short(self.r1() | if switch_error { 1 << 7 } else { 0 })
+            }
             (6, true, _) | (16, false, _) | (13, false, _) if self.state == State::Transfer => {
                 short(self.r1())
             }
@@ -516,6 +551,11 @@ impl SimulatedHostController {
             == 0
         {
             self.clockless_command = true;
+        } else if self.kind == CardKind::MultimediaCard
+            && self.peek(registers::CLOCK_DIVIDER_REGISTER) == 0
+            && self.multimedia_card_high_speed_timing == 0
+        {
+            self.fast_clock_before_high_speed = true;
         }
         let nth = self.seen[usize::from(index)];
         self.seen[usize::from(index)] += 1;
@@ -583,6 +623,7 @@ impl SimulatedHostController {
                         .extended_card_specific_data_sectors
                         .unwrap_or(self.storage.len() as u32);
                     e[212..216].copy_from_slice(&sectors.to_le_bytes());
+                    self.fill_multimedia_card_properties(&mut e);
                     t.buffer = e;
                 } else {
                     for i in 0..bytes / 512 {
@@ -595,8 +636,69 @@ impl SimulatedHostController {
                     }
                 }
             }
+            if !write && self.is_bus_width_mismatched() {
+                for b in &mut t.buffer {
+                    *b ^= 0xa5;
+                }
+            }
             self.transfer = Some(t);
         }
+    }
+
+    /// `CMD6` on an eMMC: write one `EXT_CSD` byte, `BUS_WIDTH` or `HS_TIMING`, and hold `DAT0`
+    /// while it does. Any other byte, access or value is refused with the switch error bit.
+    fn switch(&mut self, argument: u32) {
+        self.busy_reads = if self.switch_busy_forever {
+            u32::MAX
+        } else {
+            2
+        };
+        let (access, byte, value) = (
+            argument >> 24 & 3,
+            (argument >> 16) as u8,
+            (argument >> 8) as u8,
+        );
+        if self.switch_ignored {
+            return;
+        }
+        match (access, byte, value) {
+            _ if self.switch_refused => self.switch_error_pending = true,
+            (3, 183, 0) => self.multimedia_card_bus_width = 1,
+            (3, 183, 1) => self.multimedia_card_bus_width = 4,
+            (3, 183, 2) => self.multimedia_card_bus_width = 8,
+            (3, 185, 0 | 1) => self.multimedia_card_high_speed_timing = value,
+            _ => self.switch_error_pending = true,
+        }
+    }
+
+    /// The bus width the controller's card type register selects.
+    fn controller_bus_width(&self) -> u8 {
+        let card_type = self.peek(registers::CARD_TYPE_REGISTER);
+        if card_type & registers::CARD_TYPE_8_BIT_BUS != 0 {
+            8
+        } else if card_type & registers::CARD_TYPE_4_BIT_BUS != 0 {
+            4
+        } else {
+            1
+        }
+    }
+
+    /// An eMMC drives a different width than the controller listens on: what the controller reads
+    /// is not what the card sent.
+    fn is_bus_width_mismatched(&self) -> bool {
+        self.kind == CardKind::MultimediaCard
+            && self.multimedia_card_bus_width != self.controller_bus_width()
+    }
+
+    /// The read-only bytes of an eMMC's `EXT_CSD` the driver reads, and `HS_TIMING`. `BUS_WIDTH`
+    /// is write-only and reads as 0.
+    fn fill_multimedia_card_properties(&self, extended_card_specific_data: &mut [u8]) {
+        extended_card_specific_data[185] = self.multimedia_card_high_speed_timing;
+        extended_card_specific_data[192] = 8;
+        extended_card_specific_data[194] = 2;
+        extended_card_specific_data[196] = self.multimedia_card_type;
+        extended_card_specific_data[221] = 0x10;
+        extended_card_specific_data[224] = 0x01;
     }
 
     fn land(&mut self, raw_interrupt_status: u32, answer: Option<[u32; 4]>) {

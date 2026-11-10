@@ -55,6 +55,66 @@ pub const fn r1_state(r1: u32) -> u32 {
 /// The transfer state, the one a selected card idles in.
 pub const R1_STATE_TRANSFER: u32 = 4;
 
+/// **Switch error, card status bit 7** (FreeBSD's `R1_SWITCH_ERROR`, `JESD84-B51` section 6.13):
+/// set in the status after a `CMD6` the card would not carry out. It is not in [`R1_ERROR_MASK`],
+/// because only a status read after a switch reports it.
+#[doc(alias = "SWITCH_ERROR")]
+pub(crate) const R1_SWITCH_ERROR: u32 = 1 << 7;
+
+/// `CMD6`'s access field for writing one `EXT_CSD` byte, bits 25:24 = `0b11` (OpenBSD's
+/// `MMC_SWITCH_MODE_WRITE_BYTE`, FreeBSD's `MMC_SWITCH_FUNC_WR`).
+#[doc(alias = "MMC_SWITCH_MODE_WRITE_BYTE")]
+pub(crate) const SWITCH_WRITE_BYTE: u32 = 3 << 24;
+/// `CMD6`'s command set field, bits 2:0: the normal set, as both BSDs send it
+/// (`EXT_CSD_CMD_SET_NORMAL`). A byte write ignores it.
+#[doc(alias = "EXT_CSD_CMD_SET_NORMAL")]
+pub(crate) const SWITCH_COMMAND_SET_NORMAL: u32 = 1;
+
+/// **`CMD6`'s argument that writes `value` to `EXT_CSD` byte `byte`**: the access field, the byte
+/// in bits 23:16, the value in bits 15:8 and the command set, the layout of OpenBSD's
+/// `sdmmc_mem_mmc_switch` and FreeBSD's `mmc_switch`.
+#[must_use]
+pub(crate) const fn switch_argument(byte: u8, value: u8) -> u32 {
+    SWITCH_WRITE_BYTE | (byte as u32) << 16 | (value as u32) << 8 | SWITCH_COMMAND_SET_NORMAL
+}
+
+/// `EXT_CSD`'s `BUS_WIDTH`, byte 183 (`JESD84-B51` section 7.4): the data bus width the card
+/// drives. The standard makes it write-only, so a read returns no proof that a write took.
+#[doc(alias = "BUS_WIDTH")]
+#[doc(alias = "EXT_CSD_BUS_WIDTH")]
+pub(crate) const EXTENDED_CARD_SPECIFIC_DATA_BUS_WIDTH_BYTE: u8 = 183;
+/// `BUS_WIDTH`'s value for a 4-bit bus (`EXT_CSD_BUS_WIDTH_4` in both BSDs).
+#[doc(alias = "EXT_CSD_BUS_WIDTH_4")]
+pub(crate) const EXTENDED_CARD_SPECIFIC_DATA_BUS_WIDTH_4_BIT: u8 = 1;
+/// `BUS_WIDTH`'s value for an 8-bit bus (`EXT_CSD_BUS_WIDTH_8` in both BSDs).
+#[doc(alias = "EXT_CSD_BUS_WIDTH_8")]
+pub(crate) const EXTENDED_CARD_SPECIFIC_DATA_BUS_WIDTH_8_BIT: u8 = 2;
+/// `EXT_CSD`'s `HS_TIMING`, byte 185 (`JESD84-B51` section 7.4): the card's interface timing,
+/// readable, so a read after the switch shows whether it took.
+#[doc(alias = "HS_TIMING")]
+#[doc(alias = "EXT_CSD_HS_TIMING")]
+pub(crate) const EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_BYTE: u8 = 185;
+/// `HS_TIMING`'s value for high speed (`EXT_CSD_HS_TIMING_HS` in both BSDs).
+#[doc(alias = "EXT_CSD_HS_TIMING_HS")]
+pub(crate) const EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_HIGH_SPEED: u8 = 1;
+/// `EXT_CSD`'s card type, byte 196 (`EXT_CSD_CARD_TYPE` in both BSDs; `JESD84-B51` calls it
+/// `DEVICE_TYPE`): the timings the card supports. Not the controller's card type register.
+#[doc(alias = "EXT_CSD_CARD_TYPE")]
+#[doc(alias = "DEVICE_TYPE")]
+pub(crate) const EXTENDED_CARD_SPECIFIC_DATA_CARD_TYPE_BYTE: usize = 196;
+/// The card type bit for high speed at up to 26 megahertz (FreeBSD's `EXT_CSD_CARD_TYPE_HS_26`).
+#[doc(alias = "EXT_CSD_CARD_TYPE_HS_26")]
+pub(crate) const EXTENDED_CARD_SPECIFIC_DATA_CARD_TYPE_HIGH_SPEED_26_MEGAHERTZ: u8 = 1 << 0;
+/// The card type bit for high speed at up to 52 megahertz (FreeBSD's `EXT_CSD_CARD_TYPE_HS_52`).
+#[doc(alias = "EXT_CSD_CARD_TYPE_HS_52")]
+pub(crate) const EXTENDED_CARD_SPECIFIC_DATA_CARD_TYPE_HIGH_SPEED_52_MEGAHERTZ: u8 = 1 << 1;
+/// **The read-only `EXT_CSD` bytes compared across a bus width change**: `EXT_CSD_REV` (192),
+/// `CSD_STRUCTURE` (194), the card type (196), `SEC_COUNT` (212 to 215), `HC_WP_GRP_SIZE` (221)
+/// and `HC_ERASE_GRP_SIZE` (224). A card that did not take the new width answers on fewer lines
+/// than the controller listens on, so these come back changed or the read fails.
+pub(crate) const EXTENDED_CARD_SPECIFIC_DATA_READ_ONLY_BYTES: [usize; 9] =
+    [192, 194, 196, 212, 213, 214, 215, 221, 224];
+
 /// **Bits `[start, start + width_bits)` of a 128-bit register** held as four words, low word first.
 /// `width_bits` above 32 is clamped to 32; positions past bit 127 read as zero.
 #[must_use]

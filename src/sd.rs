@@ -9,6 +9,12 @@
 //! tells it from an SD 1.x card and brings it up with `CMD1`. The clock then goes from 400 kHz to
 //! 25 megahertz, default speed; high speed and UHS are not attempted, and an eMMC's bus stays 1-bit.
 //! Every step's failure names the step, so a board transcript that stops says where.
+//!
+//! An eMMC goes to a 4- or 8-bit bus and to high-speed timing only when a caller asks, with
+//! [`switch_multimedia_card_bus_width`] and [`switch_multimedia_card_to_high_speed`]. Both have run
+//! only against the simulated card in the tests, never against a real eMMC. Their order of steps
+//! follows OpenBSD's `sdmmc_mem_mmc_init` and FreeBSD's `mmc_switch` and `mmc_switch_status`
+//! (`sys/dev/mmc/mmc_subr.c`, BSD-2-Clause); no code is adapted from either.
 
 use crate::card::{
     self, CardIdentification, CardSpecificData, INTERFACE_CONDITION_ARGUMENT,
@@ -422,6 +428,251 @@ fn application_command<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
         ))
         .map_err(|e| InitializationError::Configure(command::APPLICATION_COMMAND, e))?;
     r1_ok(command::APPLICATION_COMMAND, r1[0])
+}
+
+/// The high-speed clock of an eMMC whose card type offers 52 megahertz, in hertz.
+pub(crate) const MULTIMEDIA_CARD_HIGH_SPEED_52_HERTZ: u32 = 52_000_000;
+/// The high-speed clock of an eMMC whose card type offers only 26 megahertz, in hertz.
+pub(crate) const MULTIMEDIA_CARD_HIGH_SPEED_26_HERTZ: u32 = 26_000_000;
+
+/// Why switching an eMMC's bus width or timing failed. After any error the card's own width and
+/// timing are unknown; [`identify`] starts over from them, since its `CMD0` returns the card to a
+/// 1-bit bus at default timing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MultimediaCardSwitchError {
+    /// The card is not an eMMC. [`identify`] sets an SD card's bus width itself.
+    NotMultimediaCard,
+    /// The card type byte of `EXT_CSD` offers no high-speed timing: that byte.
+    HighSpeedUnsupported(u8),
+    /// `CMD6`, `CMD13` or `CMD8` failed: the command and the error. A card that stays busy past
+    /// the deadline after `CMD6` is `Host(6, Error::Busy)`.
+    Host(u8, Error),
+    /// A command's R1 status reported an error: the command and the status.
+    Status(u8, u32),
+    /// The status after `CMD6` had the switch error bit set: the card refused the write.
+    Refused(u32),
+    /// The status after `CMD6` was not the transfer state once the card released `DAT0`.
+    Unsettled(u32),
+    /// `EXT_CSD`, read again after the switch, did not show it: the first byte that differed.
+    NotConfirmed(u16),
+    /// The controller did not take the faster card clock.
+    Clock(Error),
+}
+
+impl core::fmt::Display for MultimediaCardSwitchError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NotMultimediaCard => f.write_str("the card is not an eMMC"),
+            Self::HighSpeedUnsupported(card_type) => {
+                write!(
+                    f,
+                    "the card offers no high speed (card type {card_type:#x})"
+                )
+            }
+            Self::Host(index, e) => write!(f, "CMD{index} failed during a switch: {e}"),
+            Self::Status(index, status) => {
+                write!(f, "CMD{index} reported a card error (status {status:#x})")
+            }
+            Self::Refused(status) => write!(f, "the card refused the switch (status {status:#x})"),
+            Self::Unsettled(status) => write!(
+                f,
+                "the card was not back in the transfer state after the switch (status {status:#x})"
+            ),
+            Self::NotConfirmed(byte) => {
+                write!(f, "EXT_CSD byte {byte} read back wrong after the switch")
+            }
+            Self::Clock(e) => write!(f, "the faster card clock would not start: {e}"),
+        }
+    }
+}
+
+impl core::error::Error for MultimediaCardSwitchError {}
+
+/// `CMD8` on an eMMC in the transfer state: its 512-byte `EXT_CSD`, at the bus width and clock the
+/// controller runs now.
+fn read_extended_card_specific_data<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
+    host: &mut HostController<R, D>,
+) -> Result<[u8; BLOCK_BYTES], MultimediaCardSwitchError> {
+    let mut extended_card_specific_data = [0u8; BLOCK_BYTES];
+    let command = Command::with_data(
+        command::SEND_INTERFACE_CONDITION,
+        0,
+        Response::R1,
+        Data {
+            block_bytes: BLOCK_BYTES as u32,
+            blocks: 1,
+            is_write: false,
+        },
+    );
+    let r1 = host
+        .read_data(&command, &mut extended_card_specific_data)
+        .map_err(|e| MultimediaCardSwitchError::Host(command::SEND_INTERFACE_CONDITION, e))?;
+    if r1[0] & R1_ERROR_MASK != 0 {
+        return Err(MultimediaCardSwitchError::Status(
+            command::SEND_INTERFACE_CONDITION,
+            r1[0],
+        ));
+    }
+    Ok(extended_card_specific_data)
+}
+
+/// **`CMD6`: write `value` to `EXT_CSD` byte `byte`**, wait for the card to release `DAT0`, then
+/// ask its status with `CMD13`. The switch took only if that status has no error, no switch error,
+/// and the card back in the transfer state.
+pub(crate) fn switch<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
+    host: &mut HostController<R, D>,
+    card: &Card,
+    byte: u8,
+    value: u8,
+) -> Result<(), MultimediaCardSwitchError> {
+    let r1 = host
+        .send_command(&Command::new(
+            command::SWITCH,
+            card::switch_argument(byte, value),
+            Response::R1b,
+        ))
+        .map_err(|e| MultimediaCardSwitchError::Host(command::SWITCH, e))?;
+    if r1[0] & R1_ERROR_MASK != 0 {
+        return Err(MultimediaCardSwitchError::Status(command::SWITCH, r1[0]));
+    }
+    host.wait_not_busy()
+        .map_err(|e| MultimediaCardSwitchError::Host(command::SWITCH, e))?;
+    let status = host
+        .send_command(&Command::new(
+            command::SEND_STATUS,
+            card.relative_card_address_argument(),
+            Response::R1,
+        ))
+        .map_err(|e| MultimediaCardSwitchError::Host(command::SEND_STATUS, e))?[0];
+    if status & R1_ERROR_MASK != 0 {
+        return Err(MultimediaCardSwitchError::Status(
+            command::SEND_STATUS,
+            status,
+        ));
+    }
+    if status & card::R1_SWITCH_ERROR != 0 {
+        return Err(MultimediaCardSwitchError::Refused(status));
+    }
+    if card::r1_state(status) != card::R1_STATE_TRANSFER {
+        return Err(MultimediaCardSwitchError::Unsettled(status));
+    }
+    Ok(())
+}
+
+/// **Widen an eMMC's bus to 4 or 8 bits**, the widest `maximum_bus_width` allows, and return the
+/// width the card, the controller and `card` then share. Unconfirmed on hardware: it has run only
+/// against the simulated card in the tests, and [`identify`] never calls it, so an eMMC stays on
+/// a 1-bit bus until a caller asks. `maximum_bus_width` is the tree's `bus-width` for the slot; under
+/// 4 nothing is sent and the width stays as it is.
+///
+/// The sequence: `EXT_CSD` at the present width, `CMD6` writing `BUS_WIDTH`, the wait for `DAT0`,
+/// `CMD13` for the switch error bit, the controller's card type register set to match, then
+/// `EXT_CSD` again at the new width. `BUS_WIDTH` is write-only, so the second read is compared
+/// with the first over the card's read-only bytes: a card that ignored the write answers on fewer
+/// lines than the controller listens on. When the switch fails once the card took it, the
+/// controller goes back to the width it had.
+///
+/// # Errors
+///
+/// [`MultimediaCardSwitchError::NotMultimediaCard`] for an SD card, before anything is sent;
+/// otherwise the step that failed.
+pub fn switch_multimedia_card_bus_width<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
+    host: &mut HostController<R, D>,
+    card: &mut Card,
+    maximum_bus_width: u8,
+) -> Result<u8, MultimediaCardSwitchError> {
+    if card.kind != CardKind::MultimediaCard {
+        return Err(MultimediaCardSwitchError::NotMultimediaCard);
+    }
+    let (width, value) = if maximum_bus_width >= 8 {
+        (8, card::EXTENDED_CARD_SPECIFIC_DATA_BUS_WIDTH_8_BIT)
+    } else if maximum_bus_width >= 4 {
+        (4, card::EXTENDED_CARD_SPECIFIC_DATA_BUS_WIDTH_4_BIT)
+    } else {
+        return Ok(card.bus_width);
+    };
+    let before = read_extended_card_specific_data(host)?;
+    switch(
+        host,
+        card,
+        card::EXTENDED_CARD_SPECIFIC_DATA_BUS_WIDTH_BYTE,
+        value,
+    )?;
+    host.set_bus_width(width);
+    let after = match read_extended_card_specific_data(host) {
+        Ok(after) => after,
+        Err(e) => {
+            host.set_bus_width(card.bus_width);
+            return Err(e);
+        }
+    };
+    for byte in card::EXTENDED_CARD_SPECIFIC_DATA_READ_ONLY_BYTES {
+        if before[byte] != after[byte] {
+            host.set_bus_width(card.bus_width);
+            return Err(MultimediaCardSwitchError::NotConfirmed(byte as u16));
+        }
+    }
+    card.bus_width = width;
+    Ok(width)
+}
+
+/// **Switch an eMMC to high-speed timing, then raise the card clock**, and return the clock the
+/// card then runs at: no more than 52 megahertz, or 26 when its card type offers only that, and
+/// no more than the controller's base clock gives. Unconfirmed on hardware: it has run only
+/// against the simulated card in the tests, and [`identify`] never calls it, so an eMMC stays at 25
+/// megahertz until a caller asks.
+///
+/// The sequence: `EXT_CSD` for the card type, `CMD6` writing `HS_TIMING`, the wait for `DAT0`,
+/// `CMD13` for the switch error bit, `EXT_CSD` again to read `HS_TIMING` back, and only then the
+/// faster clock. A controller that runs the clock fast before the card has switched its timing
+/// reads data the card has not yet driven.
+///
+/// # Errors
+///
+/// [`MultimediaCardSwitchError::NotMultimediaCard`] for an SD card, before anything is sent;
+/// [`MultimediaCardSwitchError::HighSpeedUnsupported`] for a card that offers no high speed;
+/// otherwise the step that failed. The clock is raised only after every step before it succeeded.
+pub fn switch_multimedia_card_to_high_speed<
+    R: RegisterWindowAndClock,
+    D: DirectMemoryAccessRegion,
+>(
+    host: &mut HostController<R, D>,
+    card: &mut Card,
+) -> Result<u32, MultimediaCardSwitchError> {
+    if card.kind != CardKind::MultimediaCard {
+        return Err(MultimediaCardSwitchError::NotMultimediaCard);
+    }
+    let before = read_extended_card_specific_data(host)?;
+    let card_type = before[card::EXTENDED_CARD_SPECIFIC_DATA_CARD_TYPE_BYTE];
+    let hertz = if card_type & card::EXTENDED_CARD_SPECIFIC_DATA_CARD_TYPE_HIGH_SPEED_52_MEGAHERTZ
+        != 0
+    {
+        MULTIMEDIA_CARD_HIGH_SPEED_52_HERTZ
+    } else if card_type & card::EXTENDED_CARD_SPECIFIC_DATA_CARD_TYPE_HIGH_SPEED_26_MEGAHERTZ != 0 {
+        MULTIMEDIA_CARD_HIGH_SPEED_26_HERTZ
+    } else {
+        return Err(MultimediaCardSwitchError::HighSpeedUnsupported(card_type));
+    };
+    switch(
+        host,
+        card,
+        card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_BYTE,
+        card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_HIGH_SPEED,
+    )?;
+    let after = read_extended_card_specific_data(host)?;
+    let timing_byte = card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_BYTE;
+    if after[usize::from(timing_byte)]
+        != card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_HIGH_SPEED
+    {
+        return Err(MultimediaCardSwitchError::NotConfirmed(u16::from(
+            timing_byte,
+        )));
+    }
+    card.clock_hertz = host
+        .set_clock(hertz)
+        .map_err(MultimediaCardSwitchError::Clock)?;
+    Ok(card.clock_hertz)
 }
 
 fn sd_power_up<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(

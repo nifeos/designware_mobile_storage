@@ -1441,3 +1441,245 @@ fn a_card_that_keeps_reporting_busy_is_given_up_on_once_the_deadline_passes() {
     }
     kani::cover!(card.power_up_commands >= 2);
 }
+
+/// **A controller that owes the driver nothing, watched for the order of an eMMC switch.** Every
+/// register read is the solver's and every write is dropped, and the clock runs as in
+/// [`AdversarialWindowAndRunningClock`]. The window remembers the last `CMD6` sent, whether the R1
+/// read after it was clean, and whether the `CMD13` status read after that had no error, no switch
+/// error and the transfer state. Widening the controller's bus asserts that such a switch of
+/// `BUS_WIDTH` came first; the undivided card clock (above 25 megahertz at the 50 megahertz base)
+/// records whether such a switch of `HS_TIMING` came first.
+struct SwitchWatchingWindowAndClock {
+    now: u64,
+    step: u64,
+    argument: u32,
+    last_command: u32,
+    switch_argument: Option<u32>,
+    switch_response_clean: bool,
+    status_after_switch_clean: bool,
+    widened: bool,
+    raised: bool,
+    raised_after_timing_switch: bool,
+    write_commands: u32,
+}
+
+impl SwitchWatchingWindowAndClock {
+    fn new() -> Self {
+        let step: u64 = kani::any();
+        kani::assume(step > crate::sd::POWER_UP_DEADLINE_MICROSECONDS && step < 1 << 40);
+        SwitchWatchingWindowAndClock {
+            now: kani::any(),
+            step,
+            argument: 0,
+            last_command: 64,
+            switch_argument: None,
+            switch_response_clean: false,
+            status_after_switch_clean: false,
+            widened: false,
+            raised: false,
+            raised_after_timing_switch: false,
+            write_commands: 0,
+        }
+    }
+
+    /// The last `CMD6` wrote `byte`, and the card answered it and the status after it cleanly.
+    fn is_switch_acknowledged(&self, byte: u8) -> bool {
+        matches!(self.switch_argument, Some(argument) if (argument >> 16) & 0xff == u32::from(byte))
+            && self.switch_response_clean
+            && self.status_after_switch_clean
+    }
+}
+
+impl RegisterWindowAndClock for SwitchWatchingWindowAndClock {
+    fn read(&mut self, offset: u32) -> u32 {
+        let value: u32 = kani::any();
+        if offset == crate::registers::RESPONSE_0_REGISTER {
+            if self.last_command == u32::from(crate::command::SWITCH) {
+                self.switch_response_clean = value & crate::card::R1_ERROR_MASK == 0;
+            } else if self.last_command == u32::from(crate::command::SEND_STATUS)
+                && self.switch_argument.is_some()
+            {
+                self.status_after_switch_clean =
+                    value & (crate::card::R1_ERROR_MASK | crate::card::R1_SWITCH_ERROR) == 0
+                        && crate::card::r1_state(value) == crate::card::R1_STATE_TRANSFER;
+            }
+        }
+        value
+    }
+
+    fn write(&mut self, offset: u32, value: u32) {
+        use crate::registers::{
+            CARD_TYPE_REGISTER, CLOCK_DIVIDER_REGISTER, COMMAND_ARGUMENT_REGISTER,
+            COMMAND_REGISTER, COMMAND_START, COMMAND_UPDATE_CLOCK_REGISTERS_ONLY, COMMAND_WRITE,
+        };
+        if offset == COMMAND_ARGUMENT_REGISTER {
+            self.argument = value;
+        } else if offset == COMMAND_REGISTER
+            && value & COMMAND_START != 0
+            && value & COMMAND_UPDATE_CLOCK_REGISTERS_ONLY == 0
+        {
+            self.last_command = value & 0x3f;
+            if value & COMMAND_WRITE != 0 {
+                self.write_commands += 1;
+            }
+            if self.last_command == u32::from(crate::command::SWITCH) {
+                self.switch_argument = Some(self.argument);
+                self.switch_response_clean = false;
+                self.status_after_switch_clean = false;
+            }
+        } else if offset == CARD_TYPE_REGISTER && value != 0 {
+            assert!(
+                self.is_switch_acknowledged(
+                    crate::card::EXTENDED_CARD_SPECIFIC_DATA_BUS_WIDTH_BYTE
+                ),
+                "the controller's bus widened before the card took the switch"
+            );
+            self.widened = true;
+        } else if offset == CLOCK_DIVIDER_REGISTER && value == 0 {
+            self.raised = true;
+            self.raised_after_timing_switch = self.is_switch_acknowledged(
+                crate::card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_BYTE,
+            );
+        }
+    }
+
+    fn now_microseconds(&mut self) -> u64 {
+        self.now = self.now.wrapping_add(self.step);
+        self.now
+    }
+}
+
+/// **A DMA region whose descriptors the controller rewrites at will, and whose `EXT_CSD` timing
+/// and card type bytes are the solver's.** As [`AdversarialRegion`], except that each 512-byte copy
+/// out of it carries any `HS_TIMING` and card type, and the region remembers the last `HS_TIMING`
+/// it handed the driver.
+struct ExtendedCardSpecificDataRegion {
+    direct_memory_access_bus_address: u64,
+    high_speed_timing_read: core::cell::Cell<Option<u8>>,
+}
+
+impl DirectMemoryAccessRegion for ExtendedCardSpecificDataRegion {
+    fn direct_memory_access_bus_address(&self) -> u64 {
+        self.direct_memory_access_bus_address
+    }
+
+    fn bytes(&self) -> u32 {
+        3 * PAGE_BYTES
+    }
+
+    fn read_u32(&self, offset: u32) -> u32 {
+        assert!(u64::from(offset) + 4 <= u64::from(self.bytes()));
+        kani::any()
+    }
+
+    fn write_u32(&mut self, offset: u32, _value: u32) {
+        assert!(u64::from(offset) + 4 <= u64::from(self.bytes()));
+    }
+
+    fn read_bytes(&self, offset: u32, out: &mut [u8]) {
+        assert!(u64::from(offset) + out.len() as u64 <= u64::from(self.bytes()));
+        if out.len() == crate::sd::BLOCK_BYTES {
+            let timing: u8 = kani::any();
+            out[usize::from(crate::card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_BYTE)] =
+                timing;
+            out[crate::card::EXTENDED_CARD_SPECIFIC_DATA_CARD_TYPE_BYTE] = kani::any();
+            self.high_speed_timing_read.set(Some(timing));
+        }
+    }
+
+    fn write_bytes(&mut self, offset: u32, source: &[u8]) {
+        assert!(u64::from(offset) + source.len() as u64 <= u64::from(self.bytes()));
+    }
+
+    fn barrier(&mut self) {}
+}
+
+/// A host whose data phases go through the IDMAC, over [`ExtendedCardSpecificDataRegion`], at the
+/// `VisionFive` 2's 50 megahertz base.
+fn switch_watching_host()
+-> HostController<SwitchWatchingWindowAndClock, ExtendedCardSpecificDataRegion> {
+    let Ok((host, identity)) = HostController::new(
+        SwitchWatchingWindowAndClock::new(),
+        crate::jh7110::CARD_INTERFACE_UNIT_HERTZ,
+        None,
+    ) else {
+        kani::assume(false);
+        unreachable!()
+    };
+    let Ok(engine) = InternalDirectMemoryAccess::new(
+        ExtendedCardSpecificDataRegion {
+            direct_memory_access_bus_address: kani::any(),
+            high_speed_timing_read: core::cell::Cell::new(None),
+        },
+        &identity,
+    ) else {
+        kani::assume(false);
+        unreachable!()
+    };
+    host.with_internal_direct_memory_access(engine)
+}
+
+/// An eMMC as `identify` leaves it: 1 bit, 25 megahertz, at any address.
+fn any_multimedia_card() -> crate::sd::Card {
+    crate::sd::Card {
+        kind: crate::sd::CardKind::MultimediaCard,
+        bus_width: 1,
+        ..any_card()
+    }
+}
+
+/// Falsification: replayable `falsifications/proofs.an_embedded_multimedia_card_bus_widens_only_after_the_card_took_the_switch.patch`
+/// **An eMMC's bus widens only after the card took the switch**: whatever the controller, the
+/// card and the descriptors say, `switch_multimedia_card_bus_width` ends, panics nowhere, sends no
+/// write command, and sets the controller's card type register to a wider bus only after a `CMD6`
+/// writing `BUS_WIDTH` whose R1 was clean and a `CMD13` after it whose status had no error, no
+/// switch error and the transfer state. A width it returns is the `Card`'s and no more than the
+/// slot allows. The bound is one more than the nine read-only bytes the readback compares.
+///
+#[kani::proof]
+#[kani::unwind(10)]
+fn an_embedded_multimedia_card_bus_widens_only_after_the_card_took_the_switch() {
+    let mut host = switch_watching_host();
+    let mut card = any_multimedia_card();
+    let maximum_bus_width: u8 = kani::any();
+    let result =
+        crate::sd::switch_multimedia_card_bus_width(&mut host, &mut card, maximum_bus_width);
+    let window = host.registers_mut();
+    assert!(window.write_commands == 0);
+    if let Ok(width) = result {
+        assert!(width == card.bus_width);
+        assert!(width == 1 || (width <= maximum_bus_width && window.widened));
+    }
+    kani::cover!(card.bus_width == 8);
+}
+
+/// Falsification: replayable `falsifications/proofs.the_card_clock_rises_only_after_the_card_shows_high_speed_timing.patch`
+/// **The card clock rises only after the card shows high-speed timing**: whatever the controller,
+/// the card and the descriptors say, `switch_multimedia_card_to_high_speed` ends, panics nowhere,
+/// sends no write command, and runs the card clock above 25 megahertz only after a `CMD6` writing
+/// `HS_TIMING` whose R1 was clean, a `CMD13` after it whose status had no error, no switch error
+/// and the transfer state, and an `EXT_CSD` read whose `HS_TIMING` byte was 1, the last before the
+/// clock changed. A clock it returns is no more than 52 megahertz.
+///
+#[kani::proof]
+#[kani::unwind(9)]
+fn the_card_clock_rises_only_after_the_card_shows_high_speed_timing() {
+    let mut host = switch_watching_host();
+    let mut card = any_multimedia_card();
+    let result = crate::sd::switch_multimedia_card_to_high_speed(&mut host, &mut card);
+    let timing_read = match host.direct_memory_access.as_mut() {
+        Some(engine) => engine.region().high_speed_timing_read.get(),
+        None => None,
+    };
+    let window = host.registers_mut();
+    assert!(window.write_commands == 0);
+    if window.raised {
+        assert!(window.raised_after_timing_switch);
+        assert!(timing_read == Some(1));
+    }
+    if let Ok(hertz) = result {
+        assert!(hertz == card.clock_hertz);
+        assert!(hertz <= crate::sd::MULTIMEDIA_CARD_HIGH_SPEED_52_HERTZ);
+    }
+    kani::cover!(window.raised);
+}
