@@ -1,0 +1,20 @@
+Falsifies `designware_mobile_storage::proofs::an_embedded_multimedia_card_bus_widens_only_after_the_card_took_the_switch`.
+
+The defect: the status after `CMD6` is not checked for the switch error bit, so a card that
+refused the width change still has the controller widened to meet it.
+
+Expected to fail: the assertion in `SwitchWatchingWindowAndClock::write` that the controller's
+bus widened only after the card took the switch.
+diff --git a/src/sd.rs b/src/sd.rs
+--- a/src/sd.rs
++++ b/src/sd.rs
+@@ -551,9 +551,6 @@ pub(crate) fn switch<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
+             status,
+         ));
+     }
+-    if status & card::R1_SWITCH_ERROR != 0 {
+-        return Err(MultimediaCardSwitchError::Refused(status));
+-    }
+     if card::r1_state(status) != card::R1_STATE_TRANSFER {
+         return Err(MultimediaCardSwitchError::Unsettled(status));
+     }

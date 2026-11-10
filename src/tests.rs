@@ -716,3 +716,299 @@ fn the_error_enums_display_and_implement_the_error_trait() {
         "the transfer failed: the controller did not take a clock update"
     );
 }
+
+/// An eMMC brought up by `identify`, at 1 bit and 25 megahertz, with the commands so far cleared.
+fn multimedia_card(
+    configure: impl FnOnce(&mut SimulatedHostController),
+) -> (HostController<SimulatedHostController>, sd::Card) {
+    let mut simulator = SimulatedHostController::new(CardKind::MultimediaCard, 16_384, 32);
+    configure(&mut simulator);
+    let mut h = HostController::new(simulator, 50_000_000, Some(32))
+        .unwrap()
+        .0;
+    let card = sd::identify(&mut h, 8).unwrap();
+    assert_eq!((card.bus_width, card.clock_hertz), (1, 25_000_000));
+    h.registers_mut().commands.clear();
+    (h, card)
+}
+
+fn commands(h: &mut HostController<SimulatedHostController>) -> Vec<(u8, u32)> {
+    h.registers_mut().commands.clone()
+}
+
+/// A block written and read back at whatever bus and clock the card now runs.
+fn round_trip(h: &mut HostController<SimulatedHostController>, card: &sd::Card) {
+    let mut pattern = [0u8; BLOCK_BYTES];
+    for (i, b) in pattern.iter_mut().enumerate() {
+        *b = (i * 7) as u8;
+    }
+    sd::write_blocks(h, card, 40, &pattern).unwrap();
+    let mut back = [0u8; BLOCK_BYTES];
+    sd::read_blocks(h, card, 40, &mut back).unwrap();
+    assert_eq!(back, pattern);
+}
+
+/// `CMD6` writes `BUS_WIDTH` (byte 183) to the widest the slot allows, the status after it is
+/// asked, and only then does the controller follow; `EXT_CSD` read at the new width confirms it.
+#[test]
+fn an_embedded_multimedia_card_is_switched_to_the_widest_bus_the_slot_allows() {
+    for (slot, width, value, card_type) in [
+        (8, 8, 2, crate::registers::CARD_TYPE_8_BIT_BUS),
+        (4, 4, 1, crate::registers::CARD_TYPE_4_BIT_BUS),
+    ] {
+        let (mut h, mut card) = multimedia_card(|_| {});
+        assert_eq!(
+            sd::switch_multimedia_card_bus_width(&mut h, &mut card, slot),
+            Ok(width)
+        );
+        assert_eq!(card.bus_width, width);
+        assert_eq!(
+            h.registers_mut().peek(crate::registers::CARD_TYPE_REGISTER),
+            card_type
+        );
+        assert_eq!(
+            commands(&mut h),
+            [(8, 0), (6, 0x03b7_0001 | value << 8), (13, 1 << 16), (8, 0)]
+        );
+        round_trip(&mut h, &card);
+    }
+}
+
+/// A slot wired for one data line keeps the card on one: nothing is sent.
+#[test]
+fn a_one_bit_slot_sends_no_switch() {
+    let (mut h, mut card) = multimedia_card(|_| {});
+    assert_eq!(
+        sd::switch_multimedia_card_bus_width(&mut h, &mut card, 1),
+        Ok(1)
+    );
+    assert!(commands(&mut h).is_empty());
+}
+
+#[test]
+fn a_card_busy_forever_after_the_switch_is_given_up_on_and_the_controller_stays_narrow() {
+    let (mut h, mut card) = multimedia_card(|s| s.switch_busy_forever = true);
+    assert_eq!(
+        sd::switch_multimedia_card_bus_width(&mut h, &mut card, 8),
+        Err(sd::MultimediaCardSwitchError::Host(6, Error::Busy))
+    );
+    assert_eq!(card.bus_width, 1);
+    assert_eq!(
+        h.registers_mut().peek(crate::registers::CARD_TYPE_REGISTER),
+        0
+    );
+}
+
+#[test]
+fn a_switch_the_card_refuses_leaves_the_controller_narrow() {
+    let (mut h, mut card) = multimedia_card(|s| s.switch_refused = true);
+    let refused = sd::switch_multimedia_card_bus_width(&mut h, &mut card, 8);
+    assert!(
+        matches!(refused, Err(sd::MultimediaCardSwitchError::Refused(status)) if status & card::R1_SWITCH_ERROR != 0),
+        "{refused:?}"
+    );
+    assert_eq!(card.bus_width, 1);
+    assert_eq!(
+        h.registers_mut().peek(crate::registers::CARD_TYPE_REGISTER),
+        0
+    );
+    round_trip(&mut h, &card);
+}
+
+/// A card that acknowledges the switch and stays on one line answers the second `EXT_CSD` read
+/// garbled. The driver says so and puts the controller back, so the card still reads.
+#[test]
+fn a_card_that_ignores_the_width_write_is_caught_by_the_read_back() {
+    let (mut h, mut card) = multimedia_card(|s| s.switch_ignored = true);
+    assert_eq!(
+        sd::switch_multimedia_card_bus_width(&mut h, &mut card, 8),
+        Err(sd::MultimediaCardSwitchError::NotConfirmed(192))
+    );
+    assert_eq!(card.bus_width, 1);
+    assert_eq!(
+        h.registers_mut().peek(crate::registers::CARD_TYPE_REGISTER),
+        0
+    );
+    round_trip(&mut h, &card);
+}
+
+#[test]
+fn each_switch_step_names_itself_when_it_fails() {
+    use sd::MultimediaCardSwitchError as E;
+    for (fault, expected) in [
+        ((8, 2, Fault::NoResponse), E::Host(8, Error::NoResponse(8))),
+        ((6, 0, Fault::ErrorStatus), E::Status(6, 0)),
+        ((6, 0, Fault::NoResponse), E::Host(6, Error::NoResponse(6))),
+        ((13, 0, Fault::ErrorStatus), E::Status(13, 0)),
+        (
+            (13, 0, Fault::NoResponse),
+            E::Host(13, Error::NoResponse(13)),
+        ),
+        ((8, 3, Fault::ErrorStatus), E::Status(8, 0)),
+        ((8, 3, Fault::BadCrc), E::Host(8, Error::BadResponse(8, 0))),
+    ] {
+        // Occurrences count from bring-up, which sends `CMD8` twice (once at idle, once for
+        // `EXT_CSD`) and `CMD13` never.
+        let (mut h, mut card) = multimedia_card(|s| s.faults = std::vec![fault]);
+        let result = sd::switch_multimedia_card_bus_width(&mut h, &mut card, 8);
+        let same = match (result, expected) {
+            (Err(E::Status(a, _)), E::Status(b, _)) => a == b,
+            (Err(E::Host(a, Error::BadResponse(..))), E::Host(b, Error::BadResponse(..))) => a == b,
+            (r, e) => r == Err(e),
+        };
+        assert!(same, "{fault:?}: {result:?}");
+        assert_eq!(card.bus_width, 1, "{fault:?}");
+        assert_eq!(
+            h.registers_mut().peek(crate::registers::CARD_TYPE_REGISTER),
+            0,
+            "{fault:?}"
+        );
+    }
+}
+
+/// `HS_TIMING` (byte 185) is switched and read back at the default clock, and the clock rises only
+/// then: the simulated card flags any command it gets on the fast clock at default timing.
+#[test]
+fn high_speed_timing_is_switched_and_read_back_before_the_clock_rises() {
+    let (mut h, mut card) = multimedia_card(|_| {});
+    assert_eq!(
+        sd::switch_multimedia_card_bus_width(&mut h, &mut card, 8),
+        Ok(8)
+    );
+    h.registers_mut().commands.clear();
+    assert_eq!(
+        sd::switch_multimedia_card_to_high_speed(&mut h, &mut card),
+        Ok(50_000_000)
+    );
+    assert_eq!(card.clock_hertz, 50_000_000);
+    assert_eq!(
+        commands(&mut h),
+        [(8, 0), (6, 0x03b9_0101), (13, 1 << 16), (8, 0)]
+    );
+    assert_eq!(
+        h.registers_mut()
+            .peek(crate::registers::CLOCK_DIVIDER_REGISTER),
+        0
+    );
+    round_trip(&mut h, &card);
+    assert!(!h.registers_mut().fast_clock_before_high_speed);
+}
+
+/// The check the test above leans on catches the wrong order: the clock raised first.
+#[test]
+fn the_simulated_card_flags_a_fast_clock_before_high_speed_timing() {
+    let (mut h, card) = multimedia_card(|_| {});
+    h.set_clock(52_000_000).unwrap();
+    let _ = sd::switch(
+        &mut h,
+        &card,
+        card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_BYTE,
+        card::EXTENDED_CARD_SPECIFIC_DATA_HIGH_SPEED_TIMING_HIGH_SPEED,
+    );
+    assert!(h.registers_mut().fast_clock_before_high_speed);
+}
+
+#[test]
+fn a_card_that_ignores_the_timing_write_keeps_the_default_clock() {
+    let (mut h, mut card) = multimedia_card(|s| s.switch_ignored = true);
+    assert_eq!(
+        sd::switch_multimedia_card_to_high_speed(&mut h, &mut card),
+        Err(sd::MultimediaCardSwitchError::NotConfirmed(185))
+    );
+    assert_eq!(card.clock_hertz, 25_000_000);
+    assert_eq!(
+        h.registers_mut()
+            .peek(crate::registers::CLOCK_DIVIDER_REGISTER),
+        1
+    );
+    round_trip(&mut h, &card);
+    assert!(!h.registers_mut().fast_clock_before_high_speed);
+}
+
+#[test]
+fn high_speed_follows_the_card_type_and_a_refusal_keeps_the_default_clock() {
+    let (mut h, mut card) = multimedia_card(|s| s.multimedia_card_type = 0x01);
+    assert_eq!(
+        sd::switch_multimedia_card_to_high_speed(&mut h, &mut card),
+        Ok(25_000_000)
+    );
+
+    let (mut h, mut card) = multimedia_card(|s| s.multimedia_card_type = 0);
+    assert_eq!(
+        sd::switch_multimedia_card_to_high_speed(&mut h, &mut card),
+        Err(sd::MultimediaCardSwitchError::HighSpeedUnsupported(0))
+    );
+    assert_eq!(commands(&mut h), [(8, 0)]);
+
+    let (mut h, mut card) = multimedia_card(|s| s.switch_refused = true);
+    assert!(matches!(
+        sd::switch_multimedia_card_to_high_speed(&mut h, &mut card),
+        Err(sd::MultimediaCardSwitchError::Refused(_))
+    ));
+    assert_eq!(card.clock_hertz, 25_000_000);
+
+    let (mut h, mut card) = multimedia_card(|_| {});
+    h.registers_mut().clock_stuck = true;
+    assert_eq!(
+        sd::switch_multimedia_card_to_high_speed(&mut h, &mut card),
+        Err(sd::MultimediaCardSwitchError::Clock(Error::ClockUpdate))
+    );
+    assert_eq!(card.clock_hertz, 25_000_000);
+}
+
+#[test]
+fn an_sd_card_is_not_switched_like_an_embedded_multimedia_card() {
+    let mut h = host(CardKind::SdHighCapacity, 8192);
+    let mut card = sd::identify(&mut h, 4).unwrap();
+    h.registers_mut().commands.clear();
+    assert_eq!(
+        sd::switch_multimedia_card_bus_width(&mut h, &mut card, 8),
+        Err(sd::MultimediaCardSwitchError::NotMultimediaCard)
+    );
+    assert_eq!(
+        sd::switch_multimedia_card_to_high_speed(&mut h, &mut card),
+        Err(sd::MultimediaCardSwitchError::NotMultimediaCard)
+    );
+    assert!(commands(&mut h).is_empty());
+    assert_eq!((card.bus_width, card.clock_hertz), (4, 25_000_000));
+}
+
+#[test]
+fn the_switch_error_displays_each_step() {
+    use sd::MultimediaCardSwitchError as E;
+    let texts = [
+        (E::NotMultimediaCard, "the card is not an eMMC"),
+        (
+            E::HighSpeedUnsupported(0),
+            "the card offers no high speed (card type 0x0)",
+        ),
+        (
+            E::Host(6, Error::Busy),
+            "CMD6 failed during a switch: the card stayed busy past the deadline",
+        ),
+        (
+            E::Status(13, 0x80000),
+            "CMD13 reported a card error (status 0x80000)",
+        ),
+        (
+            E::Refused(0x880),
+            "the card refused the switch (status 0x880)",
+        ),
+        (
+            E::Unsettled(0xe00),
+            "the card was not back in the transfer state after the switch (status 0xe00)",
+        ),
+        (
+            E::NotConfirmed(185),
+            "EXT_CSD byte 185 read back wrong after the switch",
+        ),
+        (
+            E::Clock(Error::ClockUpdate),
+            "the faster card clock would not start: the controller did not take a clock update",
+        ),
+    ];
+    for (error, text) in texts {
+        let boxed: std::boxed::Box<dyn core::error::Error> = std::boxed::Box::new(error);
+        assert_eq!(std::format!("{boxed}"), text);
+    }
+}
