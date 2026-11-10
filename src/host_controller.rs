@@ -9,7 +9,7 @@
 //! engine ([`crate::internal_direct_memory_access`]). Commands and identification are the same on
 //! both.
 
-use crate::command::{Command, UPDATE_CLOCK};
+use crate::command::{Command, Response, STOP_TRANSMISSION, UPDATE_CLOCK};
 use crate::internal_direct_memory_access::{
     DirectMemoryAccessRegion, InternalDirectMemoryAccess, NoDirectMemoryAccess, PAGE_BYTES,
 };
@@ -148,13 +148,44 @@ pub struct Identity {
     pub card_type: u32,
 }
 
-/// How long a reset, a clock update or a command may take before the driver gives up. Generous:
-/// these are fixed costs of a few card clocks at most, and a deadline exists only so a dead
-/// controller is a reported error rather than a hung boot.
+/// How long a reset, a clock update or a command may take before the driver gives up, by default.
+/// Generous: these are fixed costs of a few card clocks at most, and a deadline exists only so a
+/// dead controller is a reported error rather than a hung boot.
 pub(crate) const COMMAND_DEADLINE_MICROSECONDS: u64 = 100_000;
-/// How long a data phase may go without progress before it is abandoned. A card may take 250 ms
-/// to start a write (the SD spec's write timeout for SDHC); half a second is that with slack.
+/// How long a data phase may go without progress before it is abandoned, by default. A card may
+/// take 250 milliseconds to start a write (the SD specification's write timeout for SDHC); half a
+/// second is that with slack.
 pub(crate) const DATA_DEADLINE_MICROSECONDS: u64 = 500_000;
+/// How long a card may hold `DAT0` busy after a write or an R1b command, by default: one second,
+/// twice the SD specification's 500 milliseconds for an extended-capacity card's write,
+/// since an eMMC may program for longer.
+pub(crate) const BUSY_DEADLINE_MICROSECONDS: u64 = 1_000_000;
+
+/// **How long the driver waits before it gives up**, in microseconds of
+/// [`RegisterWindowAndClock::now_microseconds`]. [`Deadlines::default`] holds the driver's own
+/// figures; a caller whose card programs or answers more slowly sets longer ones with
+/// [`HostController::set_deadlines`]. A deadline restarts with every reading that shows progress,
+/// so it bounds a stall, not a transfer's length.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Deadlines {
+    /// A reset, a clock update, or a command's answer. 100 milliseconds by default.
+    pub command_microseconds: u64,
+    /// A data phase with no progress. 500 milliseconds by default.
+    pub data_microseconds: u64,
+    /// The card holding `DAT0` busy after a write or an R1b command. One second by default.
+    pub busy_microseconds: u64,
+}
+
+impl Default for Deadlines {
+    fn default() -> Self {
+        Deadlines {
+            command_microseconds: COMMAND_DEADLINE_MICROSECONDS,
+            data_microseconds: DATA_DEADLINE_MICROSECONDS,
+            busy_microseconds: BUSY_DEADLINE_MICROSECONDS,
+        }
+    }
+}
 
 /// **The card clock divider** for a `target_hertz` from a `base_hertz`: the smallest `divider`
 /// with `base_hertz / (2 * divider) <= target_hertz`, or 0 (bypass) when `base_hertz` itself is
@@ -230,6 +261,8 @@ pub struct HostController<
     queue_offset: u32,
     pub(crate) depth: u32,
     base_hertz: u32,
+    hardware_configuration: u32,
+    pub(crate) deadlines: Deadlines,
     pub(crate) direct_memory_access: Option<InternalDirectMemoryAccess<D>>,
 }
 
@@ -274,6 +307,8 @@ impl<R: RegisterWindowAndClock> HostController<R> {
                 queue_offset: registers::queue_offset(id.version_identification),
                 depth,
                 base_hertz,
+                hardware_configuration: id.hardware_configuration,
+                deadlines: Deadlines::default(),
                 direct_memory_access: None,
             },
             id,
@@ -294,6 +329,8 @@ impl<R: RegisterWindowAndClock> HostController<R> {
             queue_offset: self.queue_offset,
             depth: self.depth,
             base_hertz: self.base_hertz,
+            hardware_configuration: self.hardware_configuration,
+            deadlines: self.deadlines,
             direct_memory_access: Some(internal_direct_memory_access),
         }
     }
@@ -309,6 +346,20 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
     /// Give the window back.
     pub fn into_registers(self) -> R {
         self.registers
+    }
+
+    /// **Wait for each step at most as long as `deadlines` says**, from the next wait on.
+    pub fn set_deadlines(&mut self, deadlines: Deadlines) {
+        self.deadlines = deadlines;
+    }
+
+    /// **Is a card in the slot?** `CDETECT` read now, bit 0 clear for a card present (active low,
+    /// slot 0), the reading [`Identity::card_detect`] took once at [`HostController::new`]. A
+    /// removed card otherwise surfaces only as [`Error::NoResponse`] from the next command.
+    #[doc(alias = "cdetect")]
+    #[must_use]
+    pub fn is_card_present(&mut self) -> bool {
+        self.registers.read(registers::CARD_DETECT_REGISTER) & 1 == 0
     }
 
     pub(crate) fn is_condition_met_within<F: FnMut(&mut R) -> bool>(
@@ -328,12 +379,15 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
     }
 
     /// **Reset the controller, the FIFO and the DMA interface**, mask every interrupt, clear the
-    /// raw status, and leave the bus 1-bit wide with the FIFO thresholds set for polling. The card
-    /// clock is off afterwards; [`HostController::set_clock`] turns it on.
+    /// raw status, and leave the bus 1-bit wide with the FIFO thresholds set for polling. On a
+    /// controller with an IDMAC, also reset the IDMAC and clear its status, since firmware may hand
+    /// the controller over with the IDMAC selected and part-way through a chain. The card clock is
+    /// off afterwards; [`HostController::set_clock`] turns it on.
     ///
     /// # Errors
     ///
-    /// [`Error::ResetStuck`] if a reset bit does not clear.
+    /// [`Error::ResetStuck`] if a reset bit does not clear: the `CONTROL_REGISTER` word, or the
+    /// `BUS_MODE_REGISTER` word for the IDMAC's reset.
     pub fn reset(&mut self) -> Result<(), Error> {
         self.registers.write(registers::CLOCK_ENABLE_REGISTER, 0);
         let control = self.registers.read(registers::CONTROL_REGISTER)
@@ -344,13 +398,14 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             registers::CONTROL_REGISTER,
             control | registers::CONTROL_ALL_RESETS_MASK,
         );
-        if !self.is_condition_met_within(COMMAND_DEADLINE_MICROSECONDS, |window| {
+        if !self.is_condition_met_within(self.deadlines.command_microseconds, |window| {
             window.read(registers::CONTROL_REGISTER) & registers::CONTROL_ALL_RESETS_MASK == 0
         }) {
             return Err(Error::ResetStuck(
                 self.registers.read(registers::CONTROL_REGISTER),
             ));
         }
+        self.reset_internal_direct_memory_access()?;
         self.registers
             .write(registers::INTERRUPT_MASKING_REGISTER, 0);
         self.registers
@@ -376,6 +431,33 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         Ok(())
     }
 
+    /// The IDMAC's software reset, and its status cleared, on a controller that has one (`HCON`
+    /// names no external DMA interface). `BUS_MODE_REGISTER` sits at the same offset for 32- and
+    /// 64-bit addressing; `IDSTS` moves with 64-bit addressing, so it is cleared only for 32-bit.
+    fn reset_internal_direct_memory_access(&mut self) -> Result<(), Error> {
+        if registers::direct_memory_access_interface(self.hardware_configuration) != 0 {
+            return Ok(());
+        }
+        self.registers.write(
+            registers::BUS_MODE_REGISTER,
+            registers::BUS_MODE_SOFTWARE_RESET,
+        );
+        if !self.is_condition_met_within(self.deadlines.command_microseconds, |window| {
+            window.read(registers::BUS_MODE_REGISTER) & registers::BUS_MODE_SOFTWARE_RESET == 0
+        }) {
+            return Err(Error::ResetStuck(
+                self.registers.read(registers::BUS_MODE_REGISTER),
+            ));
+        }
+        if !registers::uses_64_bit_direct_memory_access(self.hardware_configuration) {
+            self.registers.write(
+                registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER,
+                registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ALL_MASK,
+            );
+        }
+        Ok(())
+    }
+
     /// Power slot 0. The JH7110 ties the card supply on the board, so on the `VisionFive` 2 this bit is what
     /// U-Boot already set; written anyway, because a controller fresh from reset may not have it.
     pub(crate) fn power_on(&mut self) {
@@ -385,7 +467,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
     fn update_clock(&mut self) -> Result<(), Error> {
         self.registers
             .write(registers::COMMAND_REGISTER, UPDATE_CLOCK);
-        if self.is_condition_met_within(COMMAND_DEADLINE_MICROSECONDS, |window| {
+        if self.is_condition_met_within(self.deadlines.command_microseconds, |window| {
             window.read(registers::COMMAND_REGISTER) & registers::COMMAND_START == 0
         }) {
             Ok(())
@@ -432,9 +514,9 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
     ///
     /// # Errors
     ///
-    /// [`Error::Busy`] past [`DATA_DEADLINE_MICROSECONDS`].
+    /// [`Error::Busy`] past [`Deadlines::busy_microseconds`].
     pub(crate) fn wait_not_busy(&mut self) -> Result<(), Error> {
-        if self.is_condition_met_within(DATA_DEADLINE_MICROSECONDS, |window| {
+        if self.is_condition_met_within(self.deadlines.busy_microseconds, |window| {
             window.read(registers::STATUS_REGISTER) & registers::STATUS_DATA_BUSY == 0
         }) {
             Ok(())
@@ -456,22 +538,33 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
                 .write(registers::BYTE_COUNT_REGISTER, d.total_bytes());
             self.registers
                 .write(registers::BLOCK_SIZE_BYTES_REGISTER, d.block_bytes);
-            let control = self.registers.read(registers::CONTROL_REGISTER);
-            self.registers.write(
-                registers::CONTROL_REGISTER,
-                control | registers::CONTROL_QUEUE_RESET,
-            );
-            if !self.is_condition_met_within(COMMAND_DEADLINE_MICROSECONDS, |window| {
-                window.read(registers::CONTROL_REGISTER) & registers::CONTROL_QUEUE_RESET == 0
-            }) {
-                return Err(Error::ResetStuck(
-                    self.registers.read(registers::CONTROL_REGISTER),
-                ));
-            }
+            self.reset_queue()?;
             if direct_memory_access {
                 self.internal_direct_memory_access_start()?;
             }
         }
+        self.start_command(command)
+    }
+
+    /// Reset the FIFO and wait for the bit to clear.
+    fn reset_queue(&mut self) -> Result<(), Error> {
+        let control = self.registers.read(registers::CONTROL_REGISTER);
+        self.registers.write(
+            registers::CONTROL_REGISTER,
+            control | registers::CONTROL_QUEUE_RESET,
+        );
+        if !self.is_condition_met_within(self.deadlines.command_microseconds, |window| {
+            window.read(registers::CONTROL_REGISTER) & registers::CONTROL_QUEUE_RESET == 0
+        }) {
+            return Err(Error::ResetStuck(
+                self.registers.read(registers::CONTROL_REGISTER),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Write `command` to the controller and wait for its answer, with no wait on `DAT0` first.
+    fn start_command(&mut self, command: &Command) -> Result<[u32; 4], Error> {
         self.registers.write(
             registers::RAW_INTERRUPT_STATUS_REGISTER,
             registers::RAW_INTERRUPT_ALL_MASK,
@@ -480,13 +573,13 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             .write(registers::COMMAND_ARGUMENT_REGISTER, command.argument);
         self.registers
             .write(registers::COMMAND_REGISTER, command.register_word());
-        if !self.is_condition_met_within(COMMAND_DEADLINE_MICROSECONDS, |window| {
+        if !self.is_condition_met_within(self.deadlines.command_microseconds, |window| {
             window.read(registers::COMMAND_REGISTER) & registers::COMMAND_START == 0
         }) {
             return Err(Error::CommandNotTaken(command.index));
         }
         let mut status = 0;
-        if !self.is_condition_met_within(COMMAND_DEADLINE_MICROSECONDS, |window| {
+        if !self.is_condition_met_within(self.deadlines.command_microseconds, |window| {
             status = window.read(registers::RAW_INTERRUPT_STATUS_REGISTER);
             status & registers::RAW_INTERRUPT_COMMAND_DONE != 0
         }) {
@@ -534,8 +627,16 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
     ///
     /// [`Error::BufferSize`] on a size mismatch or a write command; any command-phase error;
     /// [`Error::Data`], [`Error::DirectMemoryAccess`] or [`Error::DataTimeout`] from the data
-    /// phase.
+    /// phase. After such an error on a multi-block command, the card has been sent `CMD12`, so it
+    /// is back in the transfer state for the next command.
     pub fn read_data(&mut self, command: &Command, buffer: &mut [u8]) -> Result<[u32; 4], Error> {
+        let result = self.read_data_phase(command, buffer);
+        self.stopped_after_failure(command, result)
+    }
+
+    /// [`HostController::read_data`] up to the end of its data phase, with no stop after a
+    /// failure.
+    fn read_data_phase(&mut self, command: &Command, buffer: &mut [u8]) -> Result<[u32; 4], Error> {
         let Some(d) = command.data else {
             return Err(Error::BufferSize);
         };
@@ -588,6 +689,13 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
     ///
     /// As [`HostController::read_data`].
     pub fn write_data(&mut self, command: &Command, buffer: &[u8]) -> Result<[u32; 4], Error> {
+        let result = self.write_data_phase(command, buffer);
+        self.stopped_after_failure(command, result)
+    }
+
+    /// [`HostController::write_data`] up to the end of its data phase and the card's busy, with no
+    /// stop after a failure.
+    fn write_data_phase(&mut self, command: &Command, buffer: &[u8]) -> Result<[u32; 4], Error> {
         let Some(d) = command.data else {
             return Err(Error::BufferSize);
         };
@@ -639,7 +747,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         let mut status = 0;
         let depth = self.depth;
         let write = want == registers::RAW_INTERRUPT_TRANSMIT_QUEUE_DATA_REQUEST;
-        let ok = self.is_condition_met_within(DATA_DEADLINE_MICROSECONDS, |window| {
+        let ok = self.is_condition_met_within(self.deadlines.data_microseconds, |window| {
             raw_interrupt_status = window.read(registers::RAW_INTERRUPT_STATUS_REGISTER);
             if raw_interrupt_status
                 & (registers::RAW_INTERRUPT_DATA_ERROR_MASK
@@ -655,13 +763,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
                 || raw_interrupt_status & registers::RAW_INTERRUPT_DATA_TRANSFER_OVER != 0
                     && queue_step(status, depth, write, owed) > 0
         });
-        if raw_interrupt_status
-            & (registers::RAW_INTERRUPT_DATA_ERROR_MASK
-                | registers::RAW_INTERRUPT_DATA_TIMEOUT_MASK)
-            != 0
-        {
-            return Err(Error::Data(index, raw_interrupt_status));
-        }
+        data_phase_failure(index, raw_interrupt_status, owed)?;
         if !ok {
             return Err(Error::DataTimeout(index, raw_interrupt_status, owed));
         }
@@ -678,7 +780,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             }
             _ => registers::RAW_INTERRUPT_DATA_TRANSFER_OVER,
         };
-        let ok = self.is_condition_met_within(DATA_DEADLINE_MICROSECONDS, |window| {
+        let ok = self.is_condition_met_within(self.deadlines.data_microseconds, |window| {
             raw_interrupt_status = window.read(registers::RAW_INTERRUPT_STATUS_REGISTER);
             raw_interrupt_status & want == want
                 || raw_interrupt_status
@@ -686,16 +788,53 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
                         | registers::RAW_INTERRUPT_DATA_TIMEOUT_MASK)
                     != 0
         });
-        if raw_interrupt_status
-            & (registers::RAW_INTERRUPT_DATA_ERROR_MASK
-                | registers::RAW_INTERRUPT_DATA_TIMEOUT_MASK)
-            != 0
-        {
-            return Err(Error::Data(command.index, raw_interrupt_status));
-        }
+        data_phase_failure(command.index, raw_interrupt_status, 0)?;
         if !ok {
             return Err(Error::DataTimeout(command.index, raw_interrupt_status, 0));
         }
+        Ok(())
+    }
+
+    /// **Return `result`, first stopping the card if a multi-block data phase failed.** A card
+    /// whose `CMD18` or `CMD25` ends in an error stays in its sending or receiving state, and
+    /// answers nothing but `CMD12` and `CMD13` there, until it is stopped. The controller sends the
+    /// automatic `CMD12` only after a data phase it finished, so when `RINTSTS` shows no automatic
+    /// command done, the driver sends `CMD12` itself, waits for `DAT0`, and resets the FIFO. What
+    /// the stop answers changes nothing: the error returned is the data phase's.
+    pub(crate) fn stopped_after_failure(
+        &mut self,
+        command: &Command,
+        result: Result<[u32; 4], Error>,
+    ) -> Result<[u32; 4], Error> {
+        let is_multiple_block = matches!(command.data, Some(d) if d.blocks > 1);
+        if is_multiple_block
+            && matches!(
+                result,
+                Err(Error::Data(..) | Error::DataTimeout(..) | Error::DirectMemoryAccess(..))
+            )
+            && self
+                .registers
+                .read(registers::RAW_INTERRUPT_STATUS_REGISTER)
+                & registers::RAW_INTERRUPT_AUTOMATIC_COMMAND_DONE
+                == 0
+        {
+            let _ = self.start_command(&Command::new(STOP_TRANSMISSION, 0, Response::R1b));
+            let _ = self.wait_not_busy();
+            let _ = self.reset_queue();
+        }
+        result
+    }
+}
+
+/// The error a data phase's `RINTSTS` reports, if any: [`Error::Data`] for a CRC, start-bit,
+/// end-bit, FIFO or locked-write error, which wins over [`Error::DataTimeout`] for the read data
+/// timeout and the host timeout (`DRTO`, `HTO`).
+fn data_phase_failure(index: u8, raw_interrupt_status: u32, owed: u32) -> Result<(), Error> {
+    if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_ERROR_MASK != 0 {
+        Err(Error::Data(index, raw_interrupt_status))
+    } else if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_TIMEOUT_MASK != 0 {
+        Err(Error::DataTimeout(index, raw_interrupt_status, owed))
+    } else {
         Ok(())
     }
 }
@@ -840,6 +979,14 @@ mod tests {
                     registers::CONTROL_REGISTER,
                     1 << 8 | registers::CONTROL_ALL_RESETS_MASK
                 ),
+                (
+                    registers::BUS_MODE_REGISTER,
+                    registers::BUS_MODE_SOFTWARE_RESET
+                ),
+                (
+                    registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER,
+                    registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ALL_MASK
+                ),
                 (registers::INTERRUPT_MASKING_REGISTER, 0),
                 (registers::RAW_INTERRUPT_STATUS_REGISTER, 0xffff_ffff),
                 (registers::TIMEOUT_REGISTER, 0xffff_ffff),
@@ -916,7 +1063,7 @@ mod tests {
         let mut simulator = SimulatedHostController::new(CardKind::Empty, 1, 32);
         simulator.busy_forever = true;
         simulator.clock_step = 7;
-        assert_ne!(DATA_DEADLINE_MICROSECONDS % 7, 0);
+        assert_ne!(BUSY_DEADLINE_MICROSECONDS % 7, 0);
         let mut h = take(simulator);
         assert_eq!(
             within_ten_seconds(move || h.wait_not_busy()),
@@ -1179,5 +1326,182 @@ mod tests {
                 & registers::RAW_INTERRUPT_AUTOMATIC_COMMAND_DONE,
             0
         );
+    }
+
+    /// The busy deadline is the caller's to lengthen: a card busy for longer than the default but
+    /// shorter than the deadline set is waited out, and the wait gives up only past the one set.
+    #[test]
+    fn a_longer_busy_deadline_is_waited_out_and_a_shorter_one_is_not() {
+        let mut simulator = SimulatedHostController::new(CardKind::Empty, 1, 32);
+        simulator.busy_forever = true;
+        simulator.clock_step = 1_000;
+        let mut h = take(simulator);
+        let mut deadlines = Deadlines::default();
+        assert_eq!(deadlines.busy_microseconds, BUSY_DEADLINE_MICROSECONDS);
+        deadlines.busy_microseconds = 3 * BUSY_DEADLINE_MICROSECONDS;
+        h.set_deadlines(deadlines);
+        let start = h.registers_mut().now_microseconds();
+        assert_eq!(h.wait_not_busy(), Err(Error::Busy));
+        assert!(h.registers_mut().now_microseconds() - start > 3 * BUSY_DEADLINE_MICROSECONDS);
+        deadlines.busy_microseconds = 10_000;
+        h.set_deadlines(deadlines);
+        let start = h.registers_mut().now_microseconds();
+        assert_eq!(h.wait_not_busy(), Err(Error::Busy));
+        assert!(h.registers_mut().now_microseconds() - start < BUSY_DEADLINE_MICROSECONDS);
+    }
+
+    /// Firmware may hand over the controller with the IDMAC enabled and its status raised. A reset
+    /// leaves `BUS_MODE_REGISTER` clear and `IDSTS` empty, and an IDMAC reset that never clears is
+    /// reported with the `BUS_MODE_REGISTER` word.
+    #[test]
+    fn a_reset_resets_the_internal_direct_memory_access_controller_too() {
+        let mut h = take(SimulatedHostController::new(CardKind::Empty, 1, 32));
+        h.registers_mut().write(
+            registers::BUS_MODE_REGISTER,
+            registers::BUS_MODE_INTERNAL_DIRECT_MEMORY_ACCESS_ENABLE
+                | registers::BUS_MODE_FIXED_BURST,
+        );
+        h.registers_mut().poke(
+            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER,
+            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_RECEIVE_INTERRUPT
+                | registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_NORMAL_INTERRUPT_SUMMARY,
+        );
+        h.reset().unwrap();
+        assert_eq!(h.registers_mut().peek(registers::BUS_MODE_REGISTER), 0);
+        assert_eq!(
+            h.registers_mut()
+                .peek(registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER),
+            0
+        );
+
+        let mut simulator = SimulatedHostController::new(CardKind::Empty, 1, 32);
+        simulator.bus_mode_resets_cleared = Some(0);
+        let mut h = take(simulator);
+        assert_eq!(
+            h.reset(),
+            Err(Error::ResetStuck(registers::BUS_MODE_SOFTWARE_RESET))
+        );
+    }
+
+    /// A controller with an external DMA interface has no IDMAC registers, and a reset leaves
+    /// them alone.
+    #[test]
+    fn a_reset_leaves_the_internal_direct_memory_access_registers_alone_without_one() {
+        let mut h = take(SimulatedHostController::new(CardKind::Empty, 1, 32));
+        h.hardware_configuration |= 1 << 16;
+        h.registers_mut().writes.clear();
+        h.reset().unwrap();
+        assert!(
+            !h.registers_mut()
+                .writes
+                .iter()
+                .any(|&(offset, _)| offset == registers::BUS_MODE_REGISTER)
+        );
+    }
+
+    /// `CDETECT` is read on each call, so a card taken out after `new` reads as gone.
+    #[test]
+    fn card_presence_is_read_each_time_it_is_asked() {
+        let mut h = take(SimulatedHostController::new(
+            CardKind::SdHighCapacity,
+            1024,
+            32,
+        ));
+        assert!(h.is_card_present());
+        h.registers_mut().write(registers::CARD_DETECT_REGISTER, 1);
+        assert!(!h.is_card_present());
+        let mut empty = take(SimulatedHostController::new(CardKind::Empty, 1, 32));
+        assert!(!empty.is_card_present());
+    }
+
+    /// A read whose data phase reports the read data timeout is a `DataTimeout`, not a `Data`
+    /// error, and is reported at once rather than after the driver's own deadline.
+    #[test]
+    fn a_read_data_timeout_is_reported_as_a_timeout() {
+        let mut h = take(SimulatedHostController::new(
+            CardKind::SdHighCapacity,
+            2048,
+            32,
+        ));
+        let card = sd::identify(&mut h, 4).unwrap();
+        h.registers_mut().fail_next_read_timeout = true;
+        let start = h.registers_mut().now_microseconds();
+        let mut block = [0u8; 512];
+        assert!(matches!(
+            sd::read_blocks(&mut h, &card, 1, &mut block),
+            Err(BlockTransferError::Host(Error::DataTimeout(17, raw_interrupt_status, 512)))
+                if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_READ_TIMEOUT != 0
+        ));
+        assert!(h.registers_mut().now_microseconds() - start < DATA_DEADLINE_MICROSECONDS);
+    }
+
+    /// **A failed multi-block read leaves the card in the transfer state.** The card stays in its
+    /// sending state after the error, and the controller sends no automatic stop for a data phase
+    /// it did not finish, so the driver sends `CMD12` itself; the next read then succeeds. A
+    /// failed single-block read needs no stop, and gets none.
+    #[test]
+    fn a_failed_multiple_block_read_is_stopped_and_the_next_read_succeeds() {
+        let mut h = take(SimulatedHostController::new(
+            CardKind::SdHighCapacity,
+            2048,
+            32,
+        ));
+        let card = sd::identify(&mut h, 4).unwrap();
+        h.registers_mut().storage[9][0] = 0x5a;
+        h.registers_mut().fail_next_read_crc = true;
+        h.registers_mut().commands.clear();
+        let mut blocks = [0u8; 4 * 512];
+        assert!(matches!(
+            sd::read_blocks(&mut h, &card, 8, &mut blocks),
+            Err(BlockTransferError::Host(Error::Data(18, _)))
+        ));
+        assert_eq!(h.registers_mut().commands, [(18, 8), (12, 0)]);
+        sd::read_blocks(&mut h, &card, 8, &mut blocks).unwrap();
+        assert_eq!(blocks[512], 0x5a);
+
+        h.registers_mut().fail_next_read_crc = true;
+        h.registers_mut().commands.clear();
+        let mut block = [0u8; 512];
+        assert!(sd::read_blocks(&mut h, &card, 8, &mut block).is_err());
+        assert_eq!(h.registers_mut().commands, [(17, 8)]);
+    }
+
+    /// The same for a multi-block write whose data phase ends in an error: `CMD12`, then the
+    /// next write lands.
+    #[test]
+    fn a_failed_multiple_block_write_is_stopped_and_the_next_write_lands() {
+        let mut h = take(SimulatedHostController::new(
+            CardKind::SdHighCapacity,
+            2048,
+            32,
+        ));
+        let card = sd::identify(&mut h, 4).unwrap();
+        h.registers_mut().crc_error_at_end = true;
+        h.registers_mut().commands.clear();
+        let data = [0xa5u8; 2 * 512];
+        assert!(matches!(
+            sd::write_blocks(&mut h, &card, 4, &data),
+            Err(BlockTransferError::Host(Error::Data(25, _)))
+        ));
+        assert_eq!(h.registers_mut().commands, [(25, 4), (12, 0)]);
+        h.registers_mut().crc_error_at_end = false;
+        sd::write_blocks(&mut h, &card, 4, &data).unwrap();
+        assert_eq!(h.registers_mut().storage[5][0], 0xa5);
+    }
+
+    /// A multi-block transfer that finished has had the controller's automatic stop, so a
+    /// failure after it (here the card's status check) sends no second `CMD12`.
+    #[test]
+    fn a_finished_multiple_block_transfer_gets_no_second_stop() {
+        let mut h = take(SimulatedHostController::new(
+            CardKind::SdHighCapacity,
+            2048,
+            32,
+        ));
+        let card = sd::identify(&mut h, 4).unwrap();
+        h.registers_mut().commands.clear();
+        let mut blocks = [0u8; 2 * 512];
+        sd::read_blocks(&mut h, &card, 1, &mut blocks).unwrap();
+        assert_eq!(h.registers_mut().commands, [(18, 1), (12, 0)]);
     }
 }

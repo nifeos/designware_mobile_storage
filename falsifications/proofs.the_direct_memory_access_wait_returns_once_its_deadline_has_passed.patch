@@ -17,4 +17,4 @@ diff --git a/src/internal_direct_memory_access.rs b/src/internal_direct_memory_a
 +            if now_owned != owned {
                  owned = now_owned;
                  start = now;
-             } else if now.wrapping_sub(start) > DATA_DEADLINE_MICROSECONDS {
+             } else if now.wrapping_sub(start) > self.deadlines.data_microseconds {

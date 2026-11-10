@@ -9,10 +9,9 @@
 //! last descriptor's `OWN` for memory, since a read's `DTO` can beat its last words to memory.
 
 use crate::command::Command;
-use crate::host_controller::{
-    COMMAND_DEADLINE_MICROSECONDS, DATA_DEADLINE_MICROSECONDS, Error, HostController, Identity,
-    RegisterWindowAndClock,
-};
+#[cfg(test)]
+use crate::host_controller::DATA_DEADLINE_MICROSECONDS;
+use crate::host_controller::{Error, HostController, Identity, RegisterWindowAndClock};
 use crate::registers;
 
 /// **The DMA region**, as the driver reads and writes it. Offsets are bytes from the region's
@@ -361,7 +360,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             registers::BUS_MODE_REGISTER,
             registers::BUS_MODE_SOFTWARE_RESET,
         );
-        if !self.is_condition_met_within(COMMAND_DEADLINE_MICROSECONDS, |window| {
+        if !self.is_condition_met_within(self.deadlines.command_microseconds, |window| {
             window.read(registers::BUS_MODE_REGISTER) & registers::BUS_MODE_SOFTWARE_RESET == 0
         }) {
             return Err(Error::ResetStuck(
@@ -426,12 +425,16 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             let raw_interrupt_status = self
                 .registers
                 .read(registers::RAW_INTERRUPT_STATUS_REGISTER);
-            if raw_interrupt_status
-                & (registers::RAW_INTERRUPT_DATA_ERROR_MASK
-                    | registers::RAW_INTERRUPT_DATA_TIMEOUT_MASK)
-                != 0
-            {
+            if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_ERROR_MASK != 0 {
                 return Err(Error::Data(command.index, raw_interrupt_status));
+            }
+            if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_TIMEOUT_MASK != 0 {
+                let owed = direct_memory_access.owed(count);
+                return Err(Error::DataTimeout(
+                    command.index,
+                    raw_interrupt_status,
+                    owed,
+                ));
             }
             let internal_direct_memory_access_status = self
                 .registers
@@ -456,7 +459,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             if now_owned < owned {
                 owned = now_owned;
                 start = now;
-            } else if now.wrapping_sub(start) > DATA_DEADLINE_MICROSECONDS {
+            } else if now.wrapping_sub(start) > self.deadlines.data_microseconds {
                 let owed = direct_memory_access.owed(count);
                 return Err(Error::DataTimeout(
                     command.index,
@@ -487,7 +490,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
                 | registers::CONTROL_DIRECT_MEMORY_ACCESS_RESET
                 | registers::CONTROL_QUEUE_RESET,
         );
-        let quiet = self.is_condition_met_within(COMMAND_DEADLINE_MICROSECONDS, |window| {
+        let quiet = self.is_condition_met_within(self.deadlines.command_microseconds, |window| {
             window.read(registers::CONTROL_REGISTER)
                 & (registers::CONTROL_DIRECT_MEMORY_ACCESS_RESET | registers::CONTROL_QUEUE_RESET)
                 == 0

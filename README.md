@@ -105,7 +105,7 @@ release can add a variant without breaking you.
 
 ## What is proven
 
-Each property below has a Kani harness in `src/proofs.rs`, twenty-five in all.
+Each property below has a Kani harness in `src/proofs.rs`, twenty-six in all.
 
 - No partition table makes the write test's scratch range touch a partition or sector 0.
 - A FIFO step never moves more than the transfer still owes. A write step never moves more than the
@@ -151,6 +151,8 @@ the simulated controller cover that. Only a board shows it for silicon.
   reports. The proof covers data phases of one or two blocks of 4 or 8 bytes through a FIFO one or
   two words deep. The loop's arithmetic does not depend on the length, and the FIFO step proof above
   holds for any length.
+- A two-block data phase through the FIFO that fails ends with `CMD12` sent, unless the controller
+  reported its own automatic stop. A card left sending or receiving answers nothing else.
 - Reading one block through the IDMAC never sends a write command. The driver touches the DMA region
   only inside it.
 - Writing one block through the IDMAC sends at most one write command, of 512 bytes, addressed to
@@ -244,7 +246,13 @@ driver polls each descriptor's own bit with `read_u32`, with no barrier in betwe
   hardware. They have run only against the simulated card, and only a caller that calls them gets
   them. Until a board with an eMMC module passes `docs/bench-emmc-bus-modes.md`, every eMMC is
   known to work on a 1-bit bus at 25 megahertz only.
-- Polled, with interrupts masked. No card-detect or write-protect handling.
+- Polled, with interrupts masked. `HostController::is_card_present` reads the card-detect line when
+  asked, and nothing watches it. Hot removal is untested on a board, and a card pulled during a
+  transfer surfaces as `NoResponse`. No write-protect handling.
+- After a failed multi-block transfer the driver sends `CMD12` itself. That sequence has run only
+  against the simulated card, until a board confirms it on a read interrupted by an error.
+- The default deadlines come from the SD specification, not from busy times measured on a board.
+  `HostController::set_deadlines` lengthens them.
 - The driver refuses a 16- or 64-bit FIFO. The IDMAC builds only 32-bit descriptors, so its region
   must sit below 4 GiB.
 - The polled path has read a real card. The IDMAC path has so far run only against the simulated
