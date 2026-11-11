@@ -3,8 +3,8 @@
 # A line without a reason is refused, and a line naming a survivor that no longer exists is
 # refused too, so this list can only shrink by a diff that says why.
 
-# The Kani proofs in src/proofs.rs and the simulated controller in src/simulator.rs are excluded in
-# .cargo/mutants.toml, which says why.
+# The Kani proofs in src/proofs.rs are excluded in .cargo/mutants.toml, which says why. The simulated
+# controller in src/simulator.rs ships behind the `simulator` feature, so it is mutated like the rest.
 
 # Equivalent: `1 << 0` and `1 >> 0` are both 1.
 src/card.rs:107 # `1 >> 0` is `1 << 0`, both 1
@@ -85,3 +85,21 @@ src/exported_simulator.rs:172 # the wrapper's barrier only clears fence flags th
 # Hangs: the mutant takes away what ends a loop, and every test that reaches it runs to the timeout.
 src/card.rs:221 # `i *= 1` leaves `i` at 0, so decoding an SD card's CID never ends
 src/card.rs:237 # `i *= 1` leaves `i` at 0, so decoding an eMMC's CID never ends
+
+# The simulator. Equivalent: `|` and `^` agree on operands that share no bit.
+src/simulator.rs:431 # R1's state field (bits 12:9) and READY_FOR_DATA (bit 8) are distinct, so `^` is `|`
+src/simulator.rs:432 # APP_CMD (bit 5) is distinct from the state and READY_FOR_DATA bits, so `^` is `|`
+src/simulator.rs:538 # the relative address (bits 31:16) and the status bits 0x0500 are distinct, so `^` is `|`
+src/simulator.rs:557 # the switch error (bit 7) is distinct from every bit R1 sets here, so `^` is `|`
+src/simulator.rs:811 # FRUN (bit 11) and DTO (bit 3) are distinct, so `^` is `|`
+src/simulator.rs:818 # DCRC (bit 7) and DTO (bit 3) are distinct, so `^` is `|`
+src/simulator.rs:825 # DRTO (bit 9) and DTO (bit 3) are distinct, so `^` is `|`
+src/simulator.rs:856 # IDMAC select (bit 25) and DMA enable (bit 5) are distinct, so `^` is `|`
+src/simulator.rs:918 # DU (bit 4) and AIS (bit 9) are distinct, so `^` is `|`
+src/simulator.rs:955 # RI or TI (bit 1 or 0) and NIS (bit 8) are distinct, so `^` is `|`
+src/simulator.rs:996 # FBE (bit 2) and AIS (bit 9) are distinct, so `^` is `|`
+# Equivalent: APP_CMD is set twice in the CMD55 answer, and either alone sets it.
+src/simulator.rs:433 # the pending flag is true only inside the CMD55 arm, which ORs in bit 5 itself, so a zero here changes nothing
+src/simulator.rs:511 # `r1` already carries bit 5 here, since the arm sets the pending flag before calling it, so ORing in 0 changes nothing
+# Harness only: the simulated clock is the harness's own deadline source.
+src/simulator.rs:1184 # a clock frozen at 0 or 1, or stuck at 0 by `*=`, only makes a waiting test hang to the timeout; no answer changes
