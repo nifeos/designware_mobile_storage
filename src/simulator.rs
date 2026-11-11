@@ -281,6 +281,14 @@ pub struct SimulatedHostController {
     pub fast_clock_before_high_speed: bool,
 }
 
+/// The most register writes, and the most commands, one simulated controller records. The busiest
+/// test here, a card that never finishes power-up, records under a quarter of it. A driver stuck in
+/// a loop that writes a register would otherwise grow [`SimulatedHostController::writes`] or
+/// [`SimulatedHostController::commands`] until the host ran out of memory, since the simulated
+/// clock only advances on a read. Past the bound the simulator panics, so the stuck test fails at
+/// once and says why.
+pub(crate) const RECORDED_MOST: usize = 1 << 22;
+
 /// The `VERID` the simulation reports: release 2.90a, which puts the FIFO at `0x200`.
 pub(crate) const SIMULATED_VERSION_IDENTIFICATION: u32 = 0x5342_290a;
 /// The `HCON` it reports: a 32-bit FIFO, 32-bit addresses.
@@ -576,10 +584,19 @@ impl SimulatedHostController {
         }
     }
 
+    /// Log a command, up to [`RECORDED_MOST`].
+    fn record_command(&mut self, index: u8, argument: u32) {
+        assert!(
+            self.commands.len() < RECORDED_MOST,
+            "runaway driver: {RECORDED_MOST} commands sent to one simulated card"
+        );
+        self.commands.push((index, argument));
+    }
+
     fn command(&mut self, word: u32) {
         let index = (word & 0x3f) as u8;
         let argument = *self.register(registers::COMMAND_ARGUMENT_REGISTER);
-        self.commands.push((index, argument));
+        self.record_command(index, argument);
         if *self.register(registers::CLOCK_ENABLE_REGISTER) & registers::CLOCK_ENABLE_CARD_CLOCK
             == 0
         {
@@ -1091,6 +1108,10 @@ impl RegisterWindowAndClock for SimulatedHostController {
             self.queue.push_back(value);
             return;
         }
+        assert!(
+            self.writes.len() < RECORDED_MOST,
+            "runaway driver: {RECORDED_MOST} register writes to one simulated controller"
+        );
         self.writes.push((offset, value));
         match offset {
             registers::RAW_INTERRUPT_STATUS_REGISTER => {

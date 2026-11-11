@@ -3,5 +3,85 @@
 # A line without a reason is refused, and a line naming a survivor that no longer exists is
 # refused too, so this list can only shrink by a diff that says why.
 
-# Mutation census row carried from the source tree, as counts: caught 661, missed 49, timeout 4, unviable 17.
-# The 49 missed mutant(s) are not listed here because the census did not record which; the first weekly mutation run names each, and each goes below as `<file>:<line> # <reason>`.
+# The Kani proofs in src/proofs.rs and the simulated controller in src/simulator.rs are excluded in
+# .cargo/mutants.toml, which says why.
+
+# Equivalent: `1 << 0` and `1 >> 0` are both 1.
+src/card.rs:107 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:25 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:93 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:118 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:428 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:465 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:522 # `1 >> 0` is `1 << 0`, both 1
+
+# Equivalent: `|` and `^` agree on operands that share no bit.
+src/card.rs:22 # bits 20 and 21 are distinct, so `^` between them is `|`
+src/card.rs:26 # high capacity is bit 30 and the voltage window bits 20 and 21, so `^` is `|`
+src/card.rs:78 # the access mode (bits 25:24), byte index (23:16), value (15:8) and command set (2:0) share no bit
+src/command.rs:209 # `w` holds start, hold and the index (bits 31, 29, 5:0) and never the stop bit 14, so `^=` is `|=`
+src/command.rs:210 # `w` holds start, hold and the index (bits 31, 29, 5:0) and never the wait bit 13, so `^=` is `|=`
+src/command.rs:243 # start, wait-previous and update-clock are three distinct bits, so `^` is `|`
+src/command.rs:244 # start, wait-previous and update-clock are three distinct bits, so `^` is `|`
+src/host_controller.rs:395 # the IDMAC-select, DMA-enable and interrupt-enable bits are distinct, so `^` is `|`
+src/host_controller.rs:396 # the IDMAC-select, DMA-enable and interrupt-enable bits are distinct, so `^` is `|`
+src/host_controller.rs:496 # card clock enable and low power are distinct bits, so `^` is `|`
+src/host_controller.rs:593 # the response CRC and response error bits are distinct, so `^` is `|`
+src/host_controller.rs:754 # the data error and data timeout masks share no bit, so `^` is `|`
+src/host_controller.rs:779 # data-transfer-over and automatic-command-done are distinct bits, so `^` is `|`
+src/host_controller.rs:788 # the data error and data timeout masks share no bit, so `^` is `|`
+src/internal_direct_memory_access.rs:299 # owned and chained are distinct descriptor bits, so `^` is `|`
+src/internal_direct_memory_access.rs:396 # IDMAC enable and fixed burst are distinct bits, so `^` is `|`
+src/internal_direct_memory_access.rs:415 # data-transfer-over and automatic-command-done are distinct bits, so `^` is `|`
+src/internal_direct_memory_access.rs:486 # IDMAC select and DMA enable are distinct bits, so `^` is `|`
+src/internal_direct_memory_access.rs:495 # the DMA and FIFO reset bits are distinct, so `^` is `|`
+src/internal_direct_memory_access.rs:512 # the DMA and FIFO reset bits are distinct, so `^` is `|`
+src/registers.rs:41 # the controller, FIFO and DMA reset bits are distinct, so `^` is `|`
+src/registers.rs:305 # the data error bits are distinct, so `^` is `|`
+src/registers.rs:306 # the data error bits are distinct, so `^` is `|`
+src/registers.rs:307 # the data error bits are distinct, so `^` is `|`
+src/registers.rs:308 # the data error bits are distinct, so `^` is `|`
+src/registers.rs:314 # host timeout and data read timeout are distinct bits, so `^` is `|`
+src/registers.rs:364 # the three FIFOTH fields share no bit, which the assertion above the function checks
+src/registers.rs:390 # the three FIFOTH fields share no bit, which the assertion above the function checks
+src/registers.rs:503 # the IDSTS error bits are distinct, so `^` is `|`
+src/registers.rs:504 # the IDSTS error bits are distinct, so `^` is `|`
+# Equivalent: `control` was just read with these bits clear, so setting them by `^` is setting them by `|`.
+src/internal_direct_memory_access.rs:391 # every reset and stop clears DMA enable, so `control` never holds it here
+src/internal_direct_memory_access.rs:490 # the reset bits self-clear and each reset waits for that, so `control` holds neither
+src/internal_direct_memory_access.rs:491 # the reset bits self-clear and each reset waits for that, so `control` holds neither
+
+# Equivalent: the two comparisons differ only where both branches give the same value.
+src/card.rs:122 # a width of exactly 32 is clamped to 32 either way
+src/card.rs:129 # at `shift + width == 32` the next word's bits land at bit `width` and up, which the mask clears
+src/host_controller.rs:238 # a FIFO count equal to the depth is clamped to the depth either way
+src/host_controller.rs:245 # at `bytes == remaining` both branches return the same number
+src/partition.rs:138 # at `want == gap` both branches return the same count
+
+# Equivalent: the FIFO count in STATUS, which `queue_step` reads, bounds every move. The request
+# and transfer-over bits only say when to look, so moving whenever the count allows moves the same
+# words in the same order.
+src/host_controller.rs:762 # waiting on any status bit, not just the request, moves the same words, as above
+src/host_controller.rs:763 # waiting on any status bit, not just transfer-over, moves the same words, as above
+# Equivalent: the status word was read before the FIFO writes and passed `data_phase_failure`, so
+# beyond TXDR it holds only bits of the command phase (CD) that nothing reads again; clearing them
+# too changes no later wait.
+src/host_controller.rs:735 # clearing CD with TXDR changes nothing, as above
+
+# Unreachable: `NoDirectMemoryAccess` is uninhabited, so no value exists to call these on.
+src/internal_direct_memory_access.rs:70 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:73 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:76 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:79 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:82 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:85 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:88 # a method of an uninhabited type is never called
+
+# Unobservable through the public interface: the exported simulator records a missed fence but
+# does not report it, so no caller's test can see a skipped barrier. The crate's own tests check
+# every barrier against the inner simulator.
+src/exported_simulator.rs:172 # the wrapper's barrier only clears fence flags the public simulator never reports
+
+# Hangs: the mutant takes away what ends a loop, and every test that reaches it runs to the timeout.
+src/card.rs:221 # `i *= 1` leaves `i` at 0, so decoding an SD card's CID never ends
+src/card.rs:237 # `i *= 1` leaves `i` at 0, so decoding an eMMC's CID never ends

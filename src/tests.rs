@@ -352,6 +352,58 @@ fn a_wrong_interface_echo_is_refused_rather_than_guessed_at() {
     ));
 }
 
+/// A simulated controller whose clock moves only when a command is written: `step` microseconds
+/// a command, so a test can put a reading exactly on a deadline. A wait that never sees its
+/// condition would read this clock forever, so past a million readings it panics instead.
+struct CommandClock {
+    simulator: SimulatedHostController,
+    step: u64,
+    now: u64,
+    readings: u32,
+}
+
+impl crate::host_controller::RegisterWindowAndClock for CommandClock {
+    fn read(&mut self, offset: u32) -> u32 {
+        self.simulator.read(offset)
+    }
+    fn write(&mut self, offset: u32, value: u32) {
+        if offset == crate::registers::COMMAND_REGISTER {
+            self.now += self.step;
+        }
+        self.simulator.write(offset, value);
+    }
+    fn now_microseconds(&mut self) -> u64 {
+        self.readings += 1;
+        assert!(
+            self.readings < 1 << 20,
+            "a wait read the stopped clock a million times"
+        );
+        self.now
+    }
+}
+
+/// Power-up gives up only once a reading is past its one-second deadline: a reading exactly on it
+/// still earns one more try. Each try here costs `per_try` commands, so the fifth try's reading
+/// lands on the deadline, and a card that answers ready on the sixth is brought up.
+#[test]
+fn power_up_tries_again_at_a_reading_exactly_on_its_deadline() {
+    for (kind, per_try) in [(CardKind::SdHighCapacity, 2), (CardKind::MultimediaCard, 1)] {
+        let mut simulator = SimulatedHostController::new(kind, 16_384, 32);
+        simulator.busy_polls = 5;
+        let clock = CommandClock {
+            simulator,
+            step: sd::POWER_UP_DEADLINE_MICROSECONDS / (5 * per_try),
+            now: 0,
+            readings: 0,
+        };
+        let mut h = HostController::new(clock, 50_000_000, Some(32)).unwrap().0;
+        assert!(
+            sd::identify(&mut h, 4).is_ok(),
+            "{kind:?} gave up on the deadline itself"
+        );
+    }
+}
+
 /// A worker with its own deadline turns a spin into a named failure: a mutant that removes the
 /// power-up loop's exit makes this test fail instead of hanging the run.
 #[test]

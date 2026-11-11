@@ -719,6 +719,30 @@ mod tests {
         assert!(h.registers_mut().now_microseconds() - start > DATA_DEADLINE_MICROSECONDS);
     }
 
+    /// **A reading exactly on the deadline is still inside it.** Moving one word per IDMAC step,
+    /// with the clock advanced a millisecond a reading, a page takes 511 readings without
+    /// progress before its descriptor closes. With a deadline of 511 milliseconds the last of them
+    /// lands on the deadline exactly, and the transfer must go on; one millisecond less and it is
+    /// given up, which keeps the test honest about where the readings fall.
+    #[test]
+    fn a_reading_exactly_on_the_data_deadline_does_not_give_up() {
+        for (readings, completes) in [(511, true), (510, false)] {
+            let (mut h, card, memory) = polled(3);
+            let data = pattern(0x5a, 16 * 512);
+            sd::write_blocks(&mut h, &card, 80, &data).unwrap();
+            let mut h = with_internal_direct_memory_access(h, &memory);
+            h.registers_mut().direct_memory_access_words_per_step = Some(1);
+            h.registers_mut().clock_step = 1_000;
+            h.set_deadlines(crate::host_controller::Deadlines {
+                data_microseconds: readings * 1_000,
+                ..Default::default()
+            });
+            let mut back = vec![0u8; 16 * 512];
+            let r = sd::read_blocks(&mut h, &card, 80, &mut back);
+            assert_eq!(r.is_ok(), completes, "{readings} readings: {r:?}");
+        }
+    }
+
     /// One more block than the region holds is refused before anything is sent, rather than
     /// written past the region's end; exactly what it holds is moved.
     #[test]
