@@ -3,8 +3,8 @@
 # A line without a reason is refused, and a line naming a survivor that no longer exists is
 # refused too, so this list can only shrink by a diff that says why.
 
-# The Kani proofs in src/proofs.rs and the simulated controller in src/simulator.rs are excluded in
-# .cargo/mutants.toml, which says why.
+# The Kani proofs in src/proofs.rs are excluded in .cargo/mutants.toml, which says why. The simulated
+# controller in src/simulator.rs ships behind the `simulator` feature, so it is mutated like the rest.
 
 # Equivalent: `1 << 0` and `1 >> 0` are both 1.
 src/card.rs:107 # `1 >> 0` is `1 << 0`, both 1

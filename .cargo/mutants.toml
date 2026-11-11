@@ -6,13 +6,6 @@ exclude_globs = [
     # its proofs in CI, and each proof carries a falsification patch under falsifications/ that
     # must make Kani fail. That is this file's mutation testing.
     "src/proofs.rs",
-    # src/simulator.rs is the model of the controller and card that the tests drive the driver
-    # against. A mutant of it changes the harness, not the driver, so its verdict measures the
-    # tests' model rather than shipped behavior; and a mutant that breaks the model's own clock or
-    # bookkeeping can only hang a test or grow its memory without bound. The model's fidelity is
-    # checked against the databook and board runs, not here. The public wrapper over it,
-    # src/exported_simulator.rs, is still mutated, through tests/simulator.rs.
-    "src/simulator.rs",
 ]
 
 # src/exported_simulator.rs and tests/simulator.rs build only with the `simulator` feature, so a
