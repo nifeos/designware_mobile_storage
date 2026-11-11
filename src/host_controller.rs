@@ -1052,6 +1052,21 @@ mod tests {
         assert_eq!(h.set_clock(400_000), Err(Error::ClockUpdate));
     }
 
+    /// A reading that lands exactly on the deadline is still inside it: the wait checks once more
+    /// before it gives up, and only a reading past the deadline ends it.
+    #[test]
+    fn a_reading_exactly_at_the_deadline_is_still_inside_it() {
+        let mut h = take(SimulatedHostController::new(CardKind::Empty, 1, 32));
+        let deadline_microseconds = 10;
+        let mut checks = 0;
+        let met = h.is_condition_met_within(deadline_microseconds, |_| {
+            checks += 1;
+            checks == deadline_microseconds + 2
+        });
+        assert!(met);
+        assert_eq!(checks, deadline_microseconds + 2);
+    }
+
     /// A clock that advances seven microseconds a read never lands on the deadline exactly, as a
     /// real one need not, so the give-up test has to be a comparison past it.
     #[test]

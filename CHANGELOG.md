@@ -8,6 +8,8 @@ sentence beside it.
 - First version.
 - A `simulator` feature, off by default, exports the simulated controller and card so a caller's
   own tests can run against them.
+- The simulated controller panics after about four million register writes or commands, so a
+  driver stuck in a loop fails its test at once instead of filling the host's memory.
 
 ## BUGS
 

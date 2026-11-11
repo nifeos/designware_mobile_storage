@@ -110,3 +110,41 @@ fn the_readme_example_is_a_test_in_this_file() {
 fn a_card_size_its_registers_cannot_describe_is_refused() {
     let _ = SimulatedHostController::new(CardKind::SdHighCapacity, 1000);
 }
+
+#[test]
+fn a_standard_capacity_card_may_be_larger_than_a_few_megabytes() {
+    // 8192 blocks is 4 MiB, well inside the one gibibyte a standard-capacity CSD can describe.
+    let simulator = SimulatedHostController::new(CardKind::SdVersion2, 8192);
+    let (mut host, _) = HostController::new(simulator, 50_000_000, None).unwrap();
+    assert_eq!(sd::identify(&mut host, 4).unwrap().blocks, 8192);
+}
+
+#[test]
+fn the_debug_form_names_the_card_size() {
+    let simulator = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+    assert_eq!(
+        format!("{simulator:?}"),
+        "SimulatedHostController { card_blocks: 8192, .. }"
+    );
+}
+
+#[test]
+fn the_clock_advances_one_microsecond_a_reading() {
+    let mut simulator = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+    let first = simulator.now_microseconds();
+    assert_eq!(simulator.now_microseconds(), first + 1);
+    assert_eq!(simulator.now_microseconds(), first + 2);
+}
+
+#[test]
+fn the_region_reads_back_the_words_written_to_it() {
+    use designware_mobile_storage::internal_direct_memory_access::DirectMemoryAccessRegion;
+    let mut simulator = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+    let mut region = simulator.attach_direct_memory_access_region(u64::from(PAGE_BYTES) * 16, 1);
+    region.write_u32(8, 0x1234_5678);
+    region.write_u32(12, 0x9abc_def0);
+    assert_eq!(
+        (region.read_u32(8), region.read_u32(12)),
+        (0x1234_5678, 0x9abc_def0)
+    );
+}
