@@ -6,9 +6,9 @@ say, with the evidence for each.
 
 ## The configuration
 
-- An x86_64 Linux host (Ubuntu 26.04), 80 hardware threads and 53 GB of memory.
+- An x86_64 Linux host (Ubuntu 26.04), 80 hardware threads and 53 gigabytes of memory.
 - Rust stable 1.99.1, with the three bare-metal targets already installed.
-- Kani 0.68.0 and its CBMC 6.11.0 already installed, so the README's install steps were not
+- Kani 0.68.0 and its C Bounded Model Checker (CBMC) 6.11.0 already installed, so the README's install steps were not
   measured. `cargo kani --version` matched the version the README names.
 
 ## What it took
