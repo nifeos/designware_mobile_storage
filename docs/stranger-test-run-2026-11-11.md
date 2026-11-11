@@ -1,4 +1,4 @@
-# Stranger test, run 1
+# Stranger run, 2026-11-11
 
 An agent with no earlier context in this repository cloned it fresh at `c1b58f1` and followed the
 README alone to a build, the tests and the proofs. Everything below is what the README did not
@@ -61,3 +61,8 @@ say, with the evidence for each.
 The dependency lines, the example code, the proof list, the Kani version and its install steps,
 and the falsification promise all held. Every harness verified, and the one patch tried broke its
 own harness at its own assertion. Nothing in the README was wrong; every finding is an omission.
+
+## What closed the findings
+
+The README now has a "Building and testing" section that covers findings 1 to 4, 6 and 7. The
+patch in finding 5 applies without an offset.

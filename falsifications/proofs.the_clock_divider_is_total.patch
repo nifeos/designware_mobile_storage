@@ -8,7 +8,7 @@ Expected to fail: `assert!((divider == 0) == (base <= target))`, at a target equ
 diff --git a/src/host_controller.rs b/src/host_controller.rs
 --- a/src/host_controller.rs
 +++ b/src/host_controller.rs
-@@ -148,7 +148,7 @@
+@@ -198,7 +198,7 @@
      if target_hertz == 0 {
          return None;
      }

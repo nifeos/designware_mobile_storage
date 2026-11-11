@@ -15,4 +15,4 @@ What a run is:
 
 Last run: 2026-11-11
 
-Runs: [run 1](stranger-test-run-1.md).
+Runs: [2026-11-11](stranger-test-run-2026-11-11.md).
