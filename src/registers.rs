@@ -461,7 +461,7 @@ pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER: u32 = 0x08c;
 /// register as [`INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER`], moved up one word because the
 /// descriptor list base address takes two (`HCON` bit 27 set). Provisional name.
 #[doc(alias = "IDSTS64")]
-pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER_64_BIT: u32 = 0x090;
+pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_64_BIT_ADDRESSING_REGISTER: u32 = 0x090;
 /// **Transmit interrupt** (OpenBSD's `SDMMC_IDSTS_TI`): A descriptor without `DIC` finished a
 /// transmit (memory to card).
 #[cfg(any(test, feature = "simulator"))]
@@ -726,7 +726,10 @@ mod tests {
             (POLL_DEMAND_REGISTER, 0x84),
             (DESCRIPTOR_LIST_BASE_PHYSICAL_ADDRESS_REGISTER, 0x88),
             (INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER, 0x8c),
-            (INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER_64_BIT, 0x90),
+            (
+                INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_64_BIT_ADDRESSING_REGISTER,
+                0x90,
+            ),
             (
                 INTERNAL_DIRECT_MEMORY_ACCESS_INTERRUPT_ENABLE_REGISTER,
                 0x90,

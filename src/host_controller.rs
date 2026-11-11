@@ -451,7 +451,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         }
         let status_register =
             if registers::uses_64_bit_direct_memory_access(self.hardware_configuration) {
-                registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER_64_BIT
+                registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_64_BIT_ADDRESSING_REGISTER
             } else {
                 registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER
             };
@@ -1409,14 +1409,14 @@ mod tests {
         let mut h = take(SimulatedHostController::new(CardKind::Empty, 1, 32));
         h.hardware_configuration |= 1 << 27;
         h.registers_mut().poke(
-            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER_64_BIT,
+            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_64_BIT_ADDRESSING_REGISTER,
             registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_RECEIVE_INTERRUPT,
         );
         h.registers_mut().writes.clear();
         h.reset().unwrap();
         let writes = h.registers_mut().writes.clone();
         assert!(writes.contains(&(
-            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER_64_BIT,
+            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_64_BIT_ADDRESSING_REGISTER,
             registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ALL_MASK
         )));
         assert!(
