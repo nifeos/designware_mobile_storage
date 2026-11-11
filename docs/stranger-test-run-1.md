@@ -45,16 +45,16 @@ say, with the evidence for each.
 5. **The falsification patch has drifted.** `patch -p1` applied it with
    `Hunk #1 succeeded at 198 (offset 50 lines)`. It still works, but nothing keeps the context
    lines current.
-6. **Kani's warnings are unexplained.** `cargo kani` prints 14 "trailing semicolon in macro used
+6. **Nothing explains Kani's warnings.** `cargo kani` prints 14 "trailing semicolon in macro used
    in expression position" future-incompatibility warnings (the first at `src/command.rs:252`, on
-   a `const` `assert!`), a warning that `caller_location` and a foreign function are unsupported
-   constructs that "will fail" verification if reachable, and a note on an unstable feature. The
-   stable build shows none of them, and the README does not say they are expected. All 26
+   a `const` `assert!`), a warning that Kani does not support `caller_location` or a foreign function
+   and that verification "will fail" if either is reachable, and a note on an unstable feature. The
+   stable build shows none of them, and the README does not say to expect them. All 26
    harnesses verified, so they are noise here, but a stranger cannot tell that before the run
    ends.
 7. **No bare-metal build command.** The README says the crate is `no_std` and targets the JH7110,
    but it does not show a build for that target. `cargo build --target
-   riscv64imac-unknown-none-elf` works when the target is installed.
+   riscv64imac-unknown-none-elf` works once `rustup target add` has added the target.
 
 ## What the README got right
 
