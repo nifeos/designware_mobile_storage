@@ -1185,3 +1185,6 @@ impl RegisterWindowAndClock for SimulatedHostController {
         self.now
     }
 }
+
+#[cfg(test)]
+mod tests;
