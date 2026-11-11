@@ -199,13 +199,70 @@ card: an SD card publishes a relative address other than zero.
   the clock has passed its one-second deadline. The clock runs forward at any pace, from any start
   below 2^62.
 
+Install Kani and run them as "Building and testing" below describes.
+
+## Building and testing
+
+```sh
+cargo build
+cargo test --features simulator
+rustup target add riscv64imac-unknown-none-elf
+cargo build --lib --target riscv64imac-unknown-none-elf   # the JH7110's target; CI also builds aarch64-unknown-none-softfloat and x86_64-unknown-none
+```
+
+Pass `--features simulator` to `cargo test`. Without it, Cargo skips `tests/simulator.rs` (that
+target needs the feature) and says nothing about the skip, so a plain `cargo test` looks green
+without running the seven simulator tests or the `first_sector` example above. With the feature,
+the run is 118 unit tests, 7 tests in `tests/simulator.rs` and 5 documentation tests. Run
+`rustup target add` once, before the first bare-metal build. Without it, that build stops with
+`can't find crate for core`.
+
+### Running the proofs
+
 The proofs need Kani, which `rustup` does not install. Run `cargo install --locked kani-verifier
 --version 0.68.0`, then `cargo kani setup`. The setup step downloads a model checker, so it needs
 network access. CI uses version 0.68.0, and another version may verify differently.
 
-Rerun the proofs with `cargo kani`. Each harness has a patch at
-`falsifications/<module.path>.<harness>.patch` that plants the defect it rules out. Apply one with
-`patch -p1` from the repository root, and its harness fails at its own assertion.
+Then `cargo kani`, from the crate's directory, runs all twenty-six harnesses one at a time. That
+took 40 minutes on an `x86_64` Linux machine with 80 threads. The slowest harness took about 340
+seconds and the next two about 310 and 300. The heaviest peaks near 6 gigabytes of memory. CI runs
+two at a time with `cargo kani --jobs 2 --output-format=terse`; Kani verifies in parallel only
+with terse output, and two heavy harnesses fit a 16 gigabyte machine. To run one harness, give its
+full path and `--exact`. Most take seconds:
+
+```sh
+cargo kani --harness proofs::the_clock_divider_is_total --exact
+```
+
+A passing run prints several things that look alarming. All of them are expected:
+
+- Fourteen `warning: trailing semicolon in macro used in expression position` future-compatibility
+  warnings, the first at `src/command.rs:252`. They come from Kani's toolchain, and a stable
+  build shows none.
+- `warning: use of an unstable feature`, which Kani sets for itself.
+- `warning: Found the following unsupported constructs: caller_location (1), foreign function (1)`,
+  followed by "Verification will fail if one or more of these constructs is reachable". A harness
+  that ends in `VERIFICATION:- SUCCESSFUL` never reached them.
+- Many `aborting path on assume(false)` lines. They mark paths that a harness's assumptions rule
+  out.
+- A check described as unreachable code. It reports code that cannot run, and it is no failure.
+- Source paths under `/home/runner/.rustup`, a directory that does not exist on your machine. They
+  come from the toolchain Kani ships.
+
+Trust the last line of the run: `Complete - 26 successfully verified harnesses, 0 failures, 26 total.`
+
+### Running one falsification patch
+
+```sh
+patch -p1 --no-backup-if-mismatch < falsifications/proofs.the_clock_divider_is_total.patch
+cargo kani --harness proofs::the_clock_divider_is_total --exact   # ends VERIFICATION:- FAILED
+git checkout -- src
+```
+
+The harness name is the part of the patch's file name after `proofs.`. The run ends with
+`Complete - 0 successfully verified harnesses, 1 failures, 1 total.`, and the failed check names
+the assertion that the patch breaks, here `(divider == 0) == (base <= target)`.
+`git checkout -- src` reverts the patch.
 
 ## Implementing the traits
 
@@ -278,7 +335,13 @@ driver polls each descriptor's own bit with `read_u32`, with no barrier in betwe
 
 ## Minimum Rust version
 
-Rust 1.88.
+Rust 1.88. To check it, install that toolchain and a bare-metal target, then test and build with it:
+
+```sh
+rustup toolchain install 1.88 --profile minimal --target riscv64imac-unknown-none-elf
+cargo +1.88 test --features simulator
+cargo +1.88 build --lib --target riscv64imac-unknown-none-elf
+```
 
 ## License
 
