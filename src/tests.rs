@@ -353,11 +353,13 @@ fn a_wrong_interface_echo_is_refused_rather_than_guessed_at() {
 }
 
 /// A simulated controller whose clock moves only when a command is written: `step` microseconds
-/// a command, so a test can put a reading exactly on a deadline.
+/// a command, so a test can put a reading exactly on a deadline. A wait that never sees its
+/// condition would read this clock forever, so past a million readings it panics instead.
 struct CommandClock {
     simulator: SimulatedHostController,
     step: u64,
     now: u64,
+    readings: u32,
 }
 
 impl crate::host_controller::RegisterWindowAndClock for CommandClock {
@@ -371,6 +373,11 @@ impl crate::host_controller::RegisterWindowAndClock for CommandClock {
         self.simulator.write(offset, value);
     }
     fn now_microseconds(&mut self) -> u64 {
+        self.readings += 1;
+        assert!(
+            self.readings < 1 << 20,
+            "a wait read the stopped clock a million times"
+        );
         self.now
     }
 }
@@ -387,6 +394,7 @@ fn power_up_tries_again_at_a_reading_exactly_on_its_deadline() {
             simulator,
             step: sd::POWER_UP_DEADLINE_MICROSECONDS / (5 * per_try),
             now: 0,
+            readings: 0,
         };
         let mut h = HostController::new(clock, 50_000_000, Some(32)).unwrap().0;
         assert!(
