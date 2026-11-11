@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   weekly:
-    uses: nifeos/crate-workflows/.github/workflows/weekly.yml@a6330bb8763d43948a33ba38a0f4bf576dbd57b5
+    uses: nifeos/crate-workflows/.github/workflows/weekly.yml@2e651d8987e7035a6ef1da6a602ee31315d39f61
     with:
       # The bare-metal targets ci.yml names, so drift and msrv build them too.
       targets: aarch64-unknown-none-softfloat riscv64imac-unknown-none-elf x86_64-unknown-none
