@@ -584,14 +584,19 @@ impl SimulatedHostController {
         }
     }
 
-    fn command(&mut self, word: u32) {
-        let index = (word & 0x3f) as u8;
-        let argument = *self.register(registers::COMMAND_ARGUMENT_REGISTER);
+    /// Log a command, up to [`RECORDED_MOST`].
+    fn record_command(&mut self, index: u8, argument: u32) {
         assert!(
             self.commands.len() < RECORDED_MOST,
             "runaway driver: {RECORDED_MOST} commands sent to one simulated card"
         );
         self.commands.push((index, argument));
+    }
+
+    fn command(&mut self, word: u32) {
+        let index = (word & 0x3f) as u8;
+        let argument = *self.register(registers::COMMAND_ARGUMENT_REGISTER);
+        self.record_command(index, argument);
         if *self.register(registers::CLOCK_ENABLE_REGISTER) & registers::CLOCK_ENABLE_CARD_CLOCK
             == 0
         {
