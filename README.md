@@ -224,7 +224,7 @@ The proofs need Kani, which `rustup` does not install. Run `cargo install --lock
 network access. CI uses version 0.68.0, and another version may verify differently.
 
 Then `cargo kani`, from the crate's directory, runs all twenty-six harnesses one at a time. That
-took 40 minutes on an x86_64 Linux machine with 80 threads. The slowest harness took about 340
+took 40 minutes on an `x86_64` Linux machine with 80 threads. The slowest harness took about 340
 seconds and the next two about 310 and 300. The heaviest peaks near 6 gigabytes of memory. CI runs
 two at a time with `cargo kani --jobs 2 --output-format=terse`; Kani verifies in parallel only
 with terse output, and two heavy harnesses fit a 16 gigabyte machine. To run one harness, give its
