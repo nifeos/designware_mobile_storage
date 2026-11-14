@@ -433,7 +433,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
 
     /// The IDMAC's software reset, and its status cleared, on a controller that has one (`HCON`
     /// names no external DMA interface). `BUS_MODE_REGISTER` sits at the same offset for 32- and
-    /// 64-bit addressing; `IDSTS` moves with 64-bit addressing, so it is cleared only for 32-bit.
+    /// 64-bit addressing; `IDSTS` moves up one word with 64-bit addressing, and is cleared where it is.
     fn reset_internal_direct_memory_access(&mut self) -> Result<(), Error> {
         if registers::direct_memory_access_interface(self.hardware_configuration) != 0 {
             return Ok(());
@@ -449,12 +449,16 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
                 self.registers.read(registers::BUS_MODE_REGISTER),
             ));
         }
-        if !registers::uses_64_bit_direct_memory_access(self.hardware_configuration) {
-            self.registers.write(
-                registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER,
-                registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ALL_MASK,
-            );
-        }
+        let status_register =
+            if registers::uses_64_bit_direct_memory_access(self.hardware_configuration) {
+                registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_64_BIT_ADDRESSING_REGISTER
+            } else {
+                registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER
+            };
+        self.registers.write(
+            status_register,
+            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ALL_MASK,
+        );
         Ok(())
     }
 
@@ -1395,6 +1399,31 @@ mod tests {
         assert_eq!(
             h.reset(),
             Err(Error::ResetStuck(registers::BUS_MODE_SOFTWARE_RESET))
+        );
+    }
+
+    /// With 64-bit addressing (`HCON` bit 27) `IDSTS` sits one word higher, and a reset clears it
+    /// there, leaving the 32-bit address alone (it is the upper descriptor list base).
+    #[test]
+    fn a_reset_clears_the_internal_direct_memory_access_status_where_64_bit_addressing_puts_it() {
+        let mut h = take(SimulatedHostController::new(CardKind::Empty, 1, 32));
+        h.hardware_configuration |= 1 << 27;
+        h.registers_mut().poke(
+            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_64_BIT_ADDRESSING_REGISTER,
+            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_RECEIVE_INTERRUPT,
+        );
+        h.registers_mut().writes.clear();
+        h.reset().unwrap();
+        let writes = h.registers_mut().writes.clone();
+        assert!(writes.contains(&(
+            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_64_BIT_ADDRESSING_REGISTER,
+            registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ALL_MASK
+        )));
+        assert!(
+            !writes
+                .iter()
+                .any(|&(offset, _)| offset
+                    == registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_REGISTER)
         );
     }
 
