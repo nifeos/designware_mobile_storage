@@ -3,6 +3,12 @@
 Dates are UTC. One line per release, what changed and why, so a reader of the diff has the
 sentence beside it.
 
+## 0.1.0-pre.2
+
+- The 64-bit addressing status register is cleared where that mode puts it, and `Slot::from_node`
+  has a fuzz target.
+- The simulator is under mutation testing, and its own contract has tests.
+
 ## 0.1.0-pre.1
 
 - First version.
