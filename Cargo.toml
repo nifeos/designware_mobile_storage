@@ -1,6 +1,6 @@
 [package]
 name = "designware_mobile_storage"
-version = "0.1.0-pre.1"
+version = "0.1.0-pre.2"
 edition = "2024"
 rust-version = "1.88"
 description = "Synopsys DesignWare Mobile Storage Host (dw-mshc) SD and eMMC driver logic behind one small trait, proven with Kani"
