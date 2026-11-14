@@ -195,7 +195,8 @@ fn a_card_is_identified_and_read_through_its_partition_table_without_a_write() {
     assert_eq!(sector[510..512], [0x55, 0xaa]);
     assert_eq!(&sector[82..90], b"FAT32   ");
     let mut buffer = vec![0u8; 128 * BLOCK_BYTES];
-    for k in 0..8u64 {
+    // Under Miri each 128-block command costs minutes, so a run reads fewer commands.
+    for k in 0..if cfg!(miri) { 2u64 } else { 8 } {
         sd::read_blocks(&mut h, &card, 2048 + 128 * k, &mut buffer).unwrap();
     }
     let simulator = h.into_registers();
@@ -215,12 +216,21 @@ fn the_same_blocks_read_back_at_every_clock_and_length_after_a_fresh_identificat
     let (mut h, _) = HostController::new(simulator, 50_000_000, Some(32)).unwrap();
     let mut buffer = vec![0u8; 128 * BLOCK_BYTES];
     let mut reads = 0;
-    for hertz in [
-        sd::TRANSFER_HERTZ,
-        sd::TRANSFER_HERTZ / 2,
-        sd::TRANSFER_HERTZ / 4,
-    ] {
-        for blocks in [2usize, 8, 32, 128] {
+    // Under Miri a long read costs minutes, so a run keeps two clocks and the shorter lengths.
+    let (clocks, lengths): (&[u32], &[usize]) = if cfg!(miri) {
+        (&[sd::TRANSFER_HERTZ, sd::TRANSFER_HERTZ / 4], &[2, 8, 32])
+    } else {
+        (
+            &[
+                sd::TRANSFER_HERTZ,
+                sd::TRANSFER_HERTZ / 2,
+                sd::TRANSFER_HERTZ / 4,
+            ],
+            &[2, 8, 32, 128],
+        )
+    };
+    for &hertz in clocks {
+        for &blocks in lengths {
             let card = sd::identify(&mut h, 4).unwrap();
             let card_hertz = h.set_clock(hertz).unwrap();
             assert!(card_hertz <= hertz, "{card_hertz} Hz for {hertz} Hz");
@@ -230,7 +240,7 @@ fn the_same_blocks_read_back_at_every_clock_and_length_after_a_fresh_identificat
             reads += 1;
         }
     }
-    assert_eq!(reads, 12);
+    assert_eq!(reads, clocks.len() * lengths.len());
     assert!(h.into_registers().written.is_empty());
 }
 
@@ -629,8 +639,11 @@ fn a_card_counting_in_bytes_stops_where_a_32_bit_byte_count_does() {
 /// per step, and stop where the next would pass the card's end.
 #[test]
 fn sequential_long_reads_walk_up_from_the_partition_and_stop_at_the_card_end() {
+    // Under Miri each 256-block command costs about a minute, so the card is shorter: blocks 16
+    // to 1023 fit three 256-block reads and not four.
+    let (blocks, reads_that_fit) = if cfg!(miri) { (1024, 3) } else { (2048, 7) };
     let (mut h, _) =
-        HostController::new(master_boot_record_card(2048, 16), 50_000_000, Some(32)).unwrap();
+        HostController::new(master_boot_record_card(blocks, 16), 50_000_000, Some(32)).unwrap();
     let card = sd::identify(&mut h, 4).unwrap();
     let mut buffer = vec![0u8; 256 * BLOCK_BYTES];
     let mut at = 16u64;
@@ -646,7 +659,12 @@ fn sequential_long_reads_walk_up_from_the_partition_and_stop_at_the_card_end() {
         .filter(|c| c.0 == 18)
         .map(|c| c.1)
         .collect();
-    assert_eq!(reads, (0..7).map(|k| 16 + 256 * k).collect::<Vec<u32>>());
+    assert_eq!(
+        reads,
+        (0..reads_that_fit)
+            .map(|k| 16 + 256 * k)
+            .collect::<Vec<u32>>()
+    );
 }
 
 /// An SD card's relative address goes in the high half of every addressed command's argument,
@@ -857,6 +875,12 @@ fn a_one_bit_slot_sends_no_switch() {
 #[test]
 fn a_card_busy_forever_after_the_switch_is_given_up_on_and_the_controller_stays_narrow() {
     let (mut h, mut card) = multimedia_card(|s| s.switch_busy_forever = true);
+    if cfg!(miri) {
+        // Polling to the one-second default costs minutes under Miri; the give-up is the same.
+        let mut deadlines = crate::host_controller::Deadlines::default();
+        deadlines.busy_microseconds /= 50;
+        h.set_deadlines(deadlines);
+    }
     assert_eq!(
         sd::switch_multimedia_card_bus_width(&mut h, &mut card, 8),
         Err(sd::MultimediaCardSwitchError::Host(6, Error::Busy))

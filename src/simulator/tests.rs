@@ -24,8 +24,13 @@ const TRANSFER_READY: u32 = 4 << 9 | 1 << 8;
 fn simulator(kind: CardKind, depth: usize) -> SimulatedHostController {
     let mut s = SimulatedHostController::new(kind, 1024, depth);
     s.busy_polls = 0;
+    // Byte `i` of block `n` is `(i + n) as u8`, so every block is a window of one repeating run.
+    // Copying windows keeps this cheap under Miri, where a per-byte fill of every block took
+    // minutes per test.
+    let run: [u8; 512 + 256] = core::array::from_fn(|i| i as u8);
     for (n, block) in s.storage.iter_mut().enumerate() {
-        *block = core::array::from_fn(|i| (i + n) as u8);
+        let start = n % 256;
+        block.copy_from_slice(&run[start..start + 512]);
     }
     s.write(CLOCK_DIVIDER_REGISTER, 1);
     s.write(CLOCK_ENABLE_REGISTER, CLOCK_ENABLE_CARD_CLOCK);
