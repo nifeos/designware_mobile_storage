@@ -348,7 +348,7 @@ pub(crate) const QUEUE_THRESHOLD_REGISTER: u32 = 0x04c;
 
 // The three fields the polled `FIFOTH` word composes share no bit (the burst code at bit 29, the
 // receive watermark in bits 27:16, the transmit watermark in bits 11:0), which the compiler checks
-// here; the mutation exclusion for `queue_threshold_for_programmed_input_output` names this check. The constant-assertion
+// here; the mutation exclusion for `queue_threshold_for_programmed_io` names this check. The constant-assertion
 // lint is off on purpose: the assertion is constant by construction, and the compiler checking it
 // is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
@@ -358,7 +358,7 @@ const _: () = assert!((2 << 28) + 0x0fff_0000 + 0x0000_0fff == 0x2fff_0fff);
 /// below half and a transmit watermark at half, OpenBSD's `dwmmc_pio_mode`. The burst field is
 /// OpenBSD's `2` and means nothing without DMA.
 #[must_use]
-pub(crate) const fn queue_threshold_for_programmed_input_output(depth: u32) -> u32 {
+pub(crate) const fn queue_threshold_for_programmed_io(depth: u32) -> u32 {
     let half = depth / 2;
     let receive_watermark = if half == 0 { 0 } else { half - 1 };
     (2 << 28) | ((receive_watermark & 0xfff) << 16) | (half & 0xfff)
@@ -630,22 +630,22 @@ mod tests {
     }
 
     #[test]
-    fn the_queue_moves_at_release_2_40a_and_the_programmed_input_output_thresholds_straddle_half() {
+    fn the_queue_moves_at_release_2_40a_and_the_programmed_io_thresholds_straddle_half() {
         assert_eq!(queue_offset(0x5342_2309), 0x100);
         assert_eq!(queue_offset(0x5342_240a), 0x200);
         assert_eq!(queue_offset(0x5342_290a), 0x200);
         // depth 32: receive watermark 15, transmit 16, OpenBSD's burst code 2.
         assert_eq!(
-            queue_threshold_for_programmed_input_output(32),
+            queue_threshold_for_programmed_io(32),
             (2 << 28) | (15 << 16) | 16
         );
         assert_eq!(
-            queue_threshold_receive_watermark(queue_threshold_for_programmed_input_output(32)),
+            queue_threshold_receive_watermark(queue_threshold_for_programmed_io(32)),
             15
         );
         // A one-word FIFO cannot go below zero.
         assert_eq!(
-            queue_threshold_receive_watermark(queue_threshold_for_programmed_input_output(1)),
+            queue_threshold_receive_watermark(queue_threshold_for_programmed_io(1)),
             0
         );
         assert_eq!(queue_count(0x1fff << 17), 0x1fff);

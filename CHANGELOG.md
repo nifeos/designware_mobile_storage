@@ -5,6 +5,8 @@ sentence beside it.
 
 ## 0.1.0-pre.2
 
+- Breaking rename: `queue_threshold_for_programmed_input_output` is `queue_threshold_for_programmed_io`,
+  and the test that names it follows. The old spelling has no alias.
 - The 64-bit addressing status register is cleared where that mode puts it, and `Slot::from_node`
   has a fuzz target.
 - The simulator is under mutation testing, and its own contract has tests.

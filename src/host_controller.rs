@@ -417,7 +417,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         self.registers.write(registers::CARD_TYPE_REGISTER, 0);
         self.registers.write(
             registers::QUEUE_THRESHOLD_REGISTER,
-            registers::queue_threshold_for_programmed_input_output(self.depth),
+            registers::queue_threshold_for_programmed_io(self.depth),
         );
         // The card read threshold stays off. It is for bus modes that cannot stop the card clock
         // (HS200, SDR104, HS400), which this driver does not run, and it may not exceed the FIFO:
@@ -997,7 +997,7 @@ mod tests {
                 (registers::CARD_TYPE_REGISTER, 0),
                 (
                     registers::QUEUE_THRESHOLD_REGISTER,
-                    registers::queue_threshold_for_programmed_input_output(32)
+                    registers::queue_threshold_for_programmed_io(32)
                 ),
                 (registers::CARD_THRESHOLD_CONTROL_REGISTER, 0),
             ]

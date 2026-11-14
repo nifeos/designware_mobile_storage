@@ -503,7 +503,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         );
         self.registers.write(
             registers::QUEUE_THRESHOLD_REGISTER,
-            registers::queue_threshold_for_programmed_input_output(self.depth),
+            registers::queue_threshold_for_programmed_io(self.depth),
         );
         let control = self.registers.read(registers::CONTROL_REGISTER);
         if quiet {
@@ -816,7 +816,7 @@ mod tests {
             );
             assert_eq!(
                 simulator.peek(registers::QUEUE_THRESHOLD_REGISTER),
-                registers::queue_threshold_for_programmed_input_output(32)
+                registers::queue_threshold_for_programmed_io(32)
             );
             simulator.stall_after = None;
             simulator.bus_error_at = None;
@@ -955,7 +955,7 @@ mod tests {
                 ),
                 (
                     registers::QUEUE_THRESHOLD_REGISTER,
-                    registers::queue_threshold_for_programmed_input_output(32)
+                    registers::queue_threshold_for_programmed_io(32)
                 ),
             ]
         );
