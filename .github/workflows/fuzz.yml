@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   fuzz:
-    uses: nifeos/crate-workflows/.github/workflows/fuzz.yml@2e651d8987e7035a6ef1da6a602ee31315d39f61
+    uses: nifeos/crate-workflows/.github/workflows/fuzz.yml@d788dad75e9d7e5efe94a22a2138594748c3e590
     with:
       # Crash inputs are public. Set true only for a crate with no unsafe code.
       public-crash-inputs: true
