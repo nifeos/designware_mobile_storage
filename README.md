@@ -212,8 +212,9 @@ cargo build --lib --target riscv64imac-unknown-none-elf   # the JH7110's target;
 
 Pass `--features simulator` to `cargo test`. Without it, Cargo skips `tests/simulator.rs` (that
 target needs the feature) and says nothing about the skip, so a plain `cargo test` looks green
-without running the eleven simulator tests or the `first_sector` example above. With the feature,
-the run is 147 unit tests, 11 tests in `tests/simulator.rs` and 5 documentation tests. Run
+without running the simulator tests or the `first_sector` example above. With the feature,
+`cargo test --features simulator` runs the unit tests, the tests in `tests/simulator.rs` and the
+documentation tests. Run
 `rustup target add` once, before the first bare-metal build. Without it, that build stops with
 `can't find crate for core`.
 
