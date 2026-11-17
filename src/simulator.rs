@@ -683,6 +683,10 @@ impl SimulatedHostController {
                                 .get(logical_block_address)
                                 .map_or(&[0xffu8; 512][..], |b| &b[..]),
                         );
+                        // A read never buffers more than it was asked for. The bound is also what
+                        // keeps a miscounted loop from allocating until the machine runs out of
+                        // memory, which a mutation run would otherwise suffer.
+                        assert!(t.buffer.len() <= bytes, "a read buffered past its length");
                     }
                 }
             }
