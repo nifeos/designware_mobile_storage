@@ -18,8 +18,9 @@ in its card identification (CID) register.
 
 ## Steps
 
-1. **Bring the card up.** `jh7110::Slot::from_node` for slot 0, then `HostController::new` and
-   `sd::identify(&mut host, slot.bus_width)`. Record `card.kind`, `card.blocks`,
+1. **Bring the card up.** Read slot 0's register window, `bus-width`, `fifo-depth` and card clock
+   rate from its device-tree node, then `HostController::new` and
+   `sd::identify(&mut host, bus_width)`. Record `card.kind`, `card.blocks`,
    `card.bus_width` (1) and `card.clock_hertz` (25 megahertz). Check `card.blocks` times 512
    against the module's stated capacity.
 2. **Read at 1 bit.** Read block 0, the last block (`card.blocks - 1`) and one scratch block: a

@@ -13,8 +13,10 @@ decoding of the card registers. A master boot record (MBR) rule says where a wri
 
 The crate never touches memory itself. You implement one small trait,
 `host_controller::RegisterWindowAndClock`, over your own mapped window. It reads a register, writes
-one and reads a microsecond clock. The crate is `no_std`, has no allocator, and targets the `StarFive`
-JH7110 (`VisionFive` 2).
+one and reads a microsecond clock. The crate is `no_std` and has no allocator. It knows no
+system-on-chip: the register window's address, the input clock, the FIFO depth and the bus width
+come from the caller, who reads them from its own device tree. It has run on a `StarFive`
+`VisionFive` 2.
 
 ## EXAMPLES
 
@@ -66,9 +68,10 @@ names the sectors before the first partition that a write test may use.
 
 `HostController::with_internal_direct_memory_access` moves later transfers through a direct memory
 access (DMA) region you supply. The region implements
-`internal_direct_memory_access::DirectMemoryAccessRegion`. The `jh7110` module holds that
-system-on-chip's constants and `Slot::from_node`. That function decodes one slot from the properties
-of a device-tree node you found. The crate reads no device tree itself.
+`internal_direct_memory_access::DirectMemoryAccessRegion`. The crate reads no device tree and
+names no system-on-chip's addresses, interrupts or compatible strings. Finding the controller's node
+and decoding its `reg`, `interrupts`, `bus-width`, `fifo-depth` and `assigned-clock-rates` is the
+caller's.
 
 The `simulator` feature lets your own tests run against the simulated controller and card that
 this crate's tests use, the way `embedded-hal-mock` stands in for `embedded-hal`. It is off by
@@ -207,7 +210,7 @@ Install Kani and run them as "Building and testing" below describes.
 cargo build
 cargo test --features simulator
 rustup target add riscv64imac-unknown-none-elf
-cargo build --lib --target riscv64imac-unknown-none-elf   # the JH7110's target; CI also builds aarch64-unknown-none-softfloat and x86_64-unknown-none
+cargo build --lib --target riscv64imac-unknown-none-elf   # a RISC-V bare-metal target; CI also builds aarch64-unknown-none-softfloat and x86_64-unknown-none
 ```
 
 Pass `--features simulator` to `cargo test`. Without it, Cargo skips `tests/simulator.rs` (that

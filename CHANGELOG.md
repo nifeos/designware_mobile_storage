@@ -3,6 +3,14 @@
 Dates are UTC. One line per release, what changed and why, so a reader of the diff has the
 sentence beside it.
 
+## Unreleased
+
+- Breaking: the `jh7110` module is gone, with `Slot`, `Slot::from_node`, `NODE_NAMES`, the
+  compatible strings and the addresses, interrupt numbers, clock rate and FIFO depth of that
+  system-on-chip. The crate now knows no system-on-chip; a caller finds the controller's node and
+  passes its register window, input clock and FIFO depth to `HostController::new` as before. The
+  `slot_from_node` fuzz target goes with it.
+
 ## 0.1.0-pre.2
 
 - Breaking rename: `queue_threshold_for_programmed_input_output` is `queue_threshold_for_programmed_io`,
