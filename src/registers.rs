@@ -40,8 +40,8 @@ pub(crate) const CONTROL_DIRECT_MEMORY_ACCESS_RESET: u32 = 1 << 2;
 pub(crate) const CONTROL_ALL_RESETS_MASK: u32 =
     CONTROL_CONTROLLER_RESET | CONTROL_QUEUE_RESET | CONTROL_DIRECT_MEMORY_ACCESS_RESET;
 /// **Interrupt enable** (OpenBSD's `SDMMC_CTRL_INT_ENABLE`): the global interrupt enable. This
-/// driver polls, so it stays clear: an interrupt nobody routes is a line held asserted at the PLIC
-/// for no reader.
+/// driver polls, so it stays clear: an interrupt nobody routes is a line held asserted at the
+/// platform-level interrupt controller (PLIC) for no reader.
 #[doc(alias = "interrupt enable")]
 #[doc(alias = "CTRL_INT_ENABLE")]
 pub(crate) const CONTROL_INTERRUPT_ENABLE: u32 = 1 << 4;

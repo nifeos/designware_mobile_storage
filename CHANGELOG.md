@@ -5,17 +5,15 @@ sentence beside it.
 
 ## Unreleased
 
-- Breaking: the `jh7110` module is gone, with `Slot`, `Slot::from_node`, `NODE_NAMES`, the
-  compatible strings and the addresses, interrupt numbers, clock rate and FIFO depth of that
-  system-on-chip. The crate now knows no system-on-chip; a caller finds the controller's node and
-  passes its register window, input clock and FIFO depth to `HostController::new` as before. The
-  `slot_from_node` fuzz target goes with it.
+- Breaking: the `jh7110` module and its `slot_from_node` fuzz target are gone. The crate names no
+  system-on-chip; a caller decodes its own device tree and passes the input clock and queue depth
+  to `HostController::new` as before.
 
 ## 0.1.0-pre.2
 
 - Breaking rename: `queue_threshold_for_programmed_input_output` is `queue_threshold_for_programmed_io`,
   and the test that names it follows. The old spelling has no alias.
-- The 64-bit addressing status register is cleared where that mode puts it, and `Slot::from_node`
+- The driver clears the 64-bit addressing status register where that mode puts it, and `Slot::from_node`
   has a fuzz target.
 - The simulator is under mutation testing, and its own contract has tests.
 

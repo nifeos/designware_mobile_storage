@@ -11,7 +11,7 @@ use crate::internal_direct_memory_access::DirectMemoryAccessRegion;
 use crate::sd::{BLOCK_BYTES, CardKind};
 use crate::simulator;
 
-/// The FIFO depth the simulated controller has, in 32-bit words: the JH7110's.
+/// The depth of the simulated controller's first input, first output (FIFO) queue, in 32-bit words.
 const QUEUE_DEPTH_WORDS: usize = 32;
 
 /// The largest standard-capacity SD card the simulated card-specific data (CSD) register can

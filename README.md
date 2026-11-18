@@ -13,10 +13,8 @@ decoding of the card registers. A master boot record (MBR) rule says where a wri
 
 The crate never touches memory itself. You implement one small trait,
 `host_controller::RegisterWindowAndClock`, over your own mapped window. It reads a register, writes
-one and reads a microsecond clock. The crate is `no_std` and has no allocator. It knows no
-system-on-chip: the register window's address, the input clock, the FIFO depth and the bus width
-come from the caller, who reads them from its own device tree. It has run on a `StarFive`
-`VisionFive` 2.
+one and reads a microsecond clock. The crate is `no_std`, has no allocator, and names no
+system-on-chip: you pass the input clock and the first input, first output (FIFO) depth.
 
 ## EXAMPLES
 
@@ -68,10 +66,7 @@ names the sectors before the first partition that a write test may use.
 
 `HostController::with_internal_direct_memory_access` moves later transfers through a direct memory
 access (DMA) region you supply. The region implements
-`internal_direct_memory_access::DirectMemoryAccessRegion`. The crate reads no device tree and
-names no system-on-chip's addresses, interrupts or compatible strings. Finding the controller's node
-and decoding its `reg`, `interrupts`, `bus-width`, `fifo-depth` and `assigned-clock-rates` is the
-caller's.
+`internal_direct_memory_access::DirectMemoryAccessRegion`. The crate reads no device tree.
 
 The `simulator` feature lets your own tests run against the simulated controller and card that
 this crate's tests use, the way `embedded-hal-mock` stands in for `embedded-hal`. It is off by
