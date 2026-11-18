@@ -11,7 +11,7 @@ permissions:
   contents: read
 jobs:
   proofs:
-    uses: nifeos/crate-workflows/.github/workflows/proofs.yml@d788dad75e9d7e5efe94a22a2138594748c3e590
+    uses: nifeos/crate-workflows/.github/workflows/proofs.yml@a69ab4829b02cf7a357061e9fd32ce52ba058e12
     with:
       # Two harnesses at a time keep the proofs inside the job's budget. The heaviest harness
       # peaks near 6 GB, so two fit a hosted runner's 16 GB. Kani verifies in parallel only with
