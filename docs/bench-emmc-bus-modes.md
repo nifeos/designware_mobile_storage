@@ -24,8 +24,8 @@ in its card identification (CID) register.
    `card.bus_width` (1) and `card.clock_hertz` (25 megahertz). Check `card.blocks` times 512
    against the module's stated capacity.
 2. **Read at 1 bit.** Read block 0, the last block (`card.blocks - 1`) and one scratch block: a
-   block `MasterBootRecord::scratch_sector_range` names, or any block on a module that holds no
-   data. Keep a copy of each.
+   block before the first partition that the module's partition table leaves unused, or any block
+   on a module that holds no data. Keep a copy of each.
 3. **Switch to 4 bits.** `sd::switch_multimedia_card_bus_width(&mut host, &mut card, 4)` must
    return `Ok(4)`. Read the same blocks again and compare them with the 1-bit copies. Write a
    pattern to one scratch block, read it back, then write the saved copy back.
