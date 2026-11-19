@@ -30,11 +30,4 @@ test = false
 doc = false
 bench = false
 
-[[bin]]
-name = "slot_from_node"
-path = "fuzz_targets/slot_from_node.rs"
-test = false
-doc = false
-bench = false
-
 [workspace]

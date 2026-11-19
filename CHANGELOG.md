@@ -3,11 +3,17 @@
 Dates are UTC. One line per release, what changed and why, so a reader of the diff has the
 sentence beside it.
 
+## Unreleased
+
+- Breaking: the `jh7110` module and its `slot_from_node` fuzz target are gone. The crate names no
+  system-on-chip; a caller decodes its own device tree and passes the input clock and queue depth
+  to `HostController::new` as before.
+
 ## 0.1.0-pre.2
 
 - Breaking rename: `queue_threshold_for_programmed_input_output` is `queue_threshold_for_programmed_io`,
   and the test that names it follows. The old spelling has no alias.
-- The 64-bit addressing status register is cleared where that mode puts it, and `Slot::from_node`
+- The driver clears the 64-bit addressing status register where that mode puts it, and `Slot::from_node`
   has a fuzz target.
 - The simulator is under mutation testing, and its own contract has tests.
 

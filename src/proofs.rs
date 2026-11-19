@@ -232,6 +232,12 @@ fn an_extended_card_specific_data_sector_count_is_total() {
     assert!(sectors <= u64::from(u32::MAX));
 }
 
+/// The controller's input clock the harnesses run at, 50 megahertz.
+const BASE_CLOCK_HERTZ: u32 = 50_000_000;
+
+/// The FIFO depth, in 32-bit words, the harnesses that need one give the controller.
+const QUEUE_DEPTH_WORDS: u32 = 32;
+
 /// The most clock readings one harness takes. Each harness bounds its own count below this.
 const CLOCK_READINGS: usize = 8;
 
@@ -587,8 +593,8 @@ fn sending_a_command_is_total_against_any_controller() {
 
 /// Falsification: replayable `falsifications/proofs.reset_and_the_card_clock_are_total_against_any_controller.patch`
 /// **Reset and the card clock are total against any controller**: a reset and a clock change at
-/// any rate end and panic nowhere, whatever the controller answers, and at the `VisionFive` 2's
-/// 50 megahertz the card runs no faster than asked, or at the slowest rate the divider has when nothing
+/// any rate end and panic nowhere, whatever the controller answers, and at a
+/// 50 megahertz base the card runs no faster than asked, or at the slowest rate the divider has when nothing
 /// slower exists.
 ///
 #[kani::proof]
@@ -596,7 +602,7 @@ fn sending_a_command_is_total_against_any_controller() {
 fn reset_and_the_card_clock_are_total_against_any_controller() {
     let Ok((mut host, _identity)) = HostController::new(
         AdversarialWindowAndRunningClock::new(),
-        crate::jh7110::CARD_INTERFACE_UNIT_HERTZ,
+        BASE_CLOCK_HERTZ,
         None,
     ) else {
         return;
@@ -604,7 +610,7 @@ fn reset_and_the_card_clock_are_total_against_any_controller() {
     let _ = host.reset();
     let target: u32 = kani::any();
     if let Ok(hertz) = host.set_clock(target) {
-        let slowest = crate::jh7110::CARD_INTERFACE_UNIT_HERTZ / 510;
+        let slowest = BASE_CLOCK_HERTZ / 510;
         assert!(hertz <= target || hertz == slowest);
     }
 }
@@ -747,7 +753,7 @@ fn adversarial_direct_memory_access_host()
 -> HostController<AdversarialWindowAndRunningClock, AdversarialRegion> {
     let Ok((host, identity)) = HostController::new(
         AdversarialWindowAndRunningClock::new(),
-        crate::jh7110::CARD_INTERFACE_UNIT_HERTZ,
+        BASE_CLOCK_HERTZ,
         None,
     ) else {
         kani::assume(false);
@@ -838,7 +844,7 @@ fn writing_a_block_sends_only_the_block_asked_for() {
 fn bringing_a_card_up_is_total_against_any_controller() {
     let Ok((mut host, _identity)) = HostController::new(
         AdversarialWindowAndRunningClock::new(),
-        crate::jh7110::CARD_INTERFACE_UNIT_HERTZ,
+        BASE_CLOCK_HERTZ,
         None,
     ) else {
         return;
@@ -1290,12 +1296,12 @@ impl DirectMemoryAccessRegion for ClosedRegion {
 
 /// A host over a [`ModeledCard`] whose data phases go through the IDMAC, over a
 /// [`ClosedRegion`], so an eMMC's `EXT_CSD` read is one descriptor rather than a FIFO loop.
-/// The FIFO is the JH7110's, 32 words deep; bring-up does not depend on its depth.
+/// The FIFO is 32 words deep; bring-up does not depend on its depth.
 fn modeled_card_host() -> HostController<ModeledCard, ClosedRegion> {
     let Ok((host, identity)) = HostController::new(
         ModeledCard::new(),
-        crate::jh7110::CARD_INTERFACE_UNIT_HERTZ,
-        Some(crate::jh7110::QUEUE_DEPTH_WORDS),
+        BASE_CLOCK_HERTZ,
+        Some(QUEUE_DEPTH_WORDS),
     ) else {
         kani::assume(false);
         unreachable!()
@@ -1363,11 +1369,7 @@ fn a_card_is_brought_up_only_through_every_step() {
         assert!(
             model.clock_divider
                 == u32::from(
-                    clock_divider(
-                        crate::jh7110::CARD_INTERFACE_UNIT_HERTZ,
-                        crate::sd::TRANSFER_HERTZ
-                    )
-                    .unwrap_or(255)
+                    clock_divider(BASE_CLOCK_HERTZ, crate::sd::TRANSFER_HERTZ).unwrap_or(255)
                 )
         );
     }
@@ -1395,11 +1397,7 @@ fn a_bring_up_starts_over_from_whatever_a_failed_one_left() {
         assert!(
             first.clock_divider
                 == u32::from(
-                    clock_divider(
-                        crate::jh7110::CARD_INTERFACE_UNIT_HERTZ,
-                        crate::sd::IDENTIFY_HERTZ
-                    )
-                    .unwrap_or(255)
+                    clock_divider(BASE_CLOCK_HERTZ, crate::sd::IDENTIFY_HERTZ).unwrap_or(255)
                 )
         );
     }
@@ -1505,7 +1503,7 @@ fn a_card_that_keeps_reporting_busy_is_given_up_on_once_the_deadline_passes() {
             power_up_commands: 0,
             power_up_commands_after_the_deadline: 0,
         },
-        crate::jh7110::CARD_INTERFACE_UNIT_HERTZ,
+        BASE_CLOCK_HERTZ,
         Some(32),
     ) else {
         kani::assume(false);
@@ -1682,15 +1680,13 @@ impl DirectMemoryAccessRegion for ExtendedCardSpecificDataRegion {
     fn barrier(&mut self) {}
 }
 
-/// A host whose data phases go through the IDMAC, over [`ExtendedCardSpecificDataRegion`], at the
-/// `VisionFive` 2's 50 megahertz base.
+/// A host whose data phases go through the IDMAC, over [`ExtendedCardSpecificDataRegion`], at a
+/// 50 megahertz base.
 fn switch_watching_host()
 -> HostController<SwitchWatchingWindowAndClock, ExtendedCardSpecificDataRegion> {
-    let Ok((host, identity)) = HostController::new(
-        SwitchWatchingWindowAndClock::new(),
-        crate::jh7110::CARD_INTERFACE_UNIT_HERTZ,
-        None,
-    ) else {
+    let Ok((host, identity)) =
+        HostController::new(SwitchWatchingWindowAndClock::new(), BASE_CLOCK_HERTZ, None)
+    else {
         kani::assume(false);
         unreachable!()
     };
