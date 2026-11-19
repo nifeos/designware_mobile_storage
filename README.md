@@ -9,7 +9,7 @@ A Secure Digital (SD) card and eMMC (embedded multimedia card) driver for the Sy
 Mobile Storage Host Controller (`snps,dw-mshc`, Linux's `dw_mmc`), as pure logic. It holds the
 register map, the command encoding and the polled controller sequences. It also holds the internal
 direct memory access controller (IDMAC), card identification, block reads and writes, and the
-decoding of the card registers. A master boot record (MBR) rule says where a write test may land.
+decoding of the card registers. It reads no partition table: sector 0 comes back as bytes.
 
 The crate never touches memory itself. You implement one small trait,
 `host_controller::RegisterWindowAndClock`, over your own mapped window. It reads a register, writes
@@ -61,9 +61,6 @@ fn faster_embedded_card<R: RegisterWindowAndClock>(host: &mut HostController<R>)
 }
 ```
 
-`partition::MasterBootRecord::parse` reads that sector. `MasterBootRecord::scratch_sector_range`
-names the sectors before the first partition that a write test may use.
-
 `HostController::with_internal_direct_memory_access` moves later transfers through a direct memory
 access (DMA) region you supply. The region implements
 `internal_direct_memory_access::DirectMemoryAccessRegion`. The crate reads no device tree.
@@ -103,17 +100,14 @@ release can add a variant without breaking you.
 
 ## What is proven
 
-Each property below has a Kani harness in `src/proofs.rs`, twenty-six in all.
+Each property below has a Kani harness in `src/proofs.rs`, twenty-four in all.
 
-- No partition table makes the write test's scratch range touch a partition or sector 0.
 - A FIFO step never moves more than the transfer still owes. A write step never moves more than the
   FIFO has room for, whatever `STATUS_REGISTER` says.
 - A block range the driver admits lies inside the card. It also lies inside what the command's
   32-bit argument can name.
 - An IDMAC descriptor chain describes exactly the transfer's bytes. It keeps each buffer inside the
   region's data pages and links only to descriptors in its own chain page.
-- The MBR parse accepts exactly the sectors that end in the signature. It reads each entry from its
-  own bytes and never panics on any sector 0.
 - A field read from a 128-bit register never exceeds its width.
 - Decoding any card-specific data (CSD) register, as SD or as eMMC, sizes the card without
   overflow. It sizes nothing for an unknown structure or a block length under 512 bytes.
@@ -222,7 +216,7 @@ The proofs need Kani, which `rustup` does not install. Run `cargo install --lock
 --version 0.68.0`, then `cargo kani setup`. The setup step downloads a model checker, so it needs
 network access. CI uses version 0.68.0, and another version may verify differently.
 
-Then `cargo kani`, from the crate's directory, runs all twenty-six harnesses one at a time. That
+Then `cargo kani`, from the crate's directory, runs all twenty-four harnesses one at a time. That
 took 29 minutes on an `x86_64` Linux machine with 80 threads. The slowest harness took about 240
 seconds and the next two about 210 each. The heaviest peaks near 3.5 gigabytes of resident memory
 (6 gigabytes counting the file cache of the whole run). CI runs
@@ -249,7 +243,7 @@ A passing run prints several things that look alarming. All of them are expected
 - Source paths under `/home/runner/.rustup`, a directory that does not exist on your machine. They
   come from the toolchain Kani ships.
 
-Trust the last line of the run: `Complete - 26 successfully verified harnesses, 0 failures, 26 total.`
+Trust the last line of the run: `Complete - 24 successfully verified harnesses, 0 failures, 24 total.`
 
 ### Running one falsification patch
 
@@ -327,8 +321,6 @@ driver polls each descriptor's own bit with `read_u32`, with no barrier in betwe
 - The proofs show that identification walks the card state machine in order. Nothing proves that it
   reads the right capacity or tells SD from SD High Capacity (SDHC). The host tests check that
   against simulated SD, SDHC and eMMC cards.
-- The MBR parse does not know the card's size. The layer that mounts a partition checks whether it
-  fits the card.
 - The driver takes the address an SD card publishes with `CMD3` as it comes. A card that published
   zero would get `CMD7` at zero, which deselects every card. The bring-up proofs assume a card
   publishes a nonzero address.

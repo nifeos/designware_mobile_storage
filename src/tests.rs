@@ -3,7 +3,6 @@
 
 use crate::card;
 use crate::host_controller::{Error, HostController};
-use crate::partition::MasterBootRecord;
 use crate::sd::{self, BLOCK_BYTES, BlockTransferError, InitializationError};
 use crate::simulator::{CardKind, SimulatedHostController};
 
@@ -189,8 +188,8 @@ fn a_card_is_identified_and_read_through_its_partition_table_without_a_write() {
     let card = sd::identify(&mut h, 4).unwrap();
     let mut sector = [0u8; BLOCK_BYTES];
     sd::read_blocks(&mut h, &card, 0, &mut sector).unwrap();
-    let table = MasterBootRecord::parse(&sector).unwrap();
-    assert_eq!(table.entries[0].start, 2048);
+    assert_eq!(sector[510..512], [0x55, 0xaa]);
+    assert_eq!(sector[446 + 8..446 + 12], 2048u32.to_le_bytes());
     sd::read_blocks(&mut h, &card, 2048, &mut sector).unwrap();
     assert_eq!(sector[510..512], [0x55, 0xaa]);
     assert_eq!(&sector[82..90], b"FAT32   ");
@@ -254,11 +253,8 @@ fn a_write_confined_to_the_gap_is_read_back_and_restored_exactly() {
     let before = simulator.storage.clone();
     let (mut h, _) = HostController::new(simulator, 50_000_000, Some(32)).unwrap();
     let card = sd::identify(&mut h, 4).unwrap();
-    let mut sector = [0u8; BLOCK_BYTES];
-    sd::read_blocks(&mut h, &card, 0, &mut sector).unwrap();
-    let table = MasterBootRecord::parse(&sector).unwrap();
-    let (first, count) = table.scratch_sector_range(8).unwrap();
-    assert_eq!((first, count), (2040, 8));
+    // The eight sectors that end where the first partition starts, at 2048.
+    let (first, count) = (2040u32, 8u32);
     let bytes = count as usize * BLOCK_BYTES;
     let first = u64::from(first);
     let (mut original, mut pattern, mut back) =

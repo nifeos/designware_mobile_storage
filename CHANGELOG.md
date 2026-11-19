@@ -8,6 +8,9 @@ sentence beside it.
 - Breaking: the `jh7110` module and its `slot_from_node` fuzz target are gone. The crate names no
   system-on-chip; a caller decodes its own device tree and passes the input clock and queue depth
   to `HostController::new` as before.
+- Breaking: the `partition` module (`MasterBootRecord`, `PartitionEntry`) is gone, with its two
+  harnesses and its fuzz target. Parsing a partition table is not a controller's job, and other
+  block drivers need it without this crate; it moves to a partition-table crate of its own.
 
 ## 0.1.0-pre.2
 

@@ -31,7 +31,6 @@ pub mod command;
 pub mod host_controller;
 #[doc(alias = "idmac")]
 pub mod internal_direct_memory_access;
-pub mod partition;
 pub mod registers;
 pub mod sd;
 

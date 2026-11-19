@@ -56,7 +56,6 @@ src/card.rs:122 # a width of exactly 32 is clamped to 32 either way
 src/card.rs:129 # at `shift + width == 32` the next word's bits land at bit `width` and up, which the mask clears
 src/host_controller.rs:238 # a FIFO count equal to the depth is clamped to the depth either way
 src/host_controller.rs:245 # at `bytes == remaining` both branches return the same number
-src/partition.rs:138 # at `want == gap` both branches return the same count
 
 # Equivalent: the FIFO count in STATUS, which `queue_step` reads, bounds every move. The request
 # and transfer-over bits only say when to look, so moving whenever the count allows moves the same
