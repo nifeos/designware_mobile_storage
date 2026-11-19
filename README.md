@@ -312,8 +312,8 @@ driver polls each descriptor's own bit with `read_u32`, with no barrier in betwe
   `HostController::set_deadlines` lengthens them.
 - The driver refuses a 16- or 64-bit FIFO. The IDMAC builds only 32-bit descriptors, so its region
   must sit below 4 GiB.
-- The polled path has read a real card. The IDMAC path has so far run only against the simulated
-  controller in the tests.
+- Both the polled path and the IDMAC have read and written a microSD card on a board, the writes
+  only to the sectors before the first partition. No eMMC has run on either path.
 - The IDMAC moves at most its region's data pages per command and copies through them once each way.
 - The proof that the card clock stays at or below the target covers a 50 megahertz base only. For a
   base the solver picks, the comparison builds two symbolic 32-bit divisions. That ran past five
