@@ -1,9 +1,9 @@
 # designware_mobile_storage
 
-[![check](https://github.com/nifeos/designware_mobile_storage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nifeos/designware_mobile_storage/actions/workflows/ci.yml?query=branch%3Amain)
-[![proofs](https://github.com/nifeos/designware_mobile_storage/actions/workflows/proofs.yml/badge.svg?branch=main)](https://github.com/nifeos/designware_mobile_storage/actions/workflows/proofs.yml?query=branch%3Amain)
-[![license](https://img.shields.io/badge/license-%28MIT%20OR%20Apache--2.0%29%20AND%20ISC-blue.svg)](https://github.com/nifeos/designware_mobile_storage#license)
-[![minimum Rust version](https://img.shields.io/badge/rust-1.88%2B-blue.svg)](https://github.com/nifeos/designware_mobile_storage/blob/main/Cargo.toml)
+[![check](https://github.com/partsfoundry/designware_mobile_storage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/partsfoundry/designware_mobile_storage/actions/workflows/ci.yml?query=branch%3Amain)
+[![proofs](https://github.com/partsfoundry/designware_mobile_storage/actions/workflows/proofs.yml/badge.svg?branch=main)](https://github.com/partsfoundry/designware_mobile_storage/actions/workflows/proofs.yml?query=branch%3Amain)
+[![license](https://img.shields.io/badge/license-%28MIT%20OR%20Apache--2.0%29%20AND%20ISC-blue.svg)](https://github.com/partsfoundry/designware_mobile_storage#license)
+[![minimum Rust version](https://img.shields.io/badge/rust-1.88%2B-blue.svg)](https://github.com/partsfoundry/designware_mobile_storage/blob/main/Cargo.toml)
 
 A Secure Digital (SD) card and eMMC (embedded multimedia card) driver for the Synopsys `DesignWare`
 Mobile Storage Host Controller (`snps,dw-mshc`, Linux's `dw_mmc`), as pure logic. It holds the
@@ -22,7 +22,7 @@ The crate is not on crates.io. Take it from this repository, pinned at a commit 
 
 ```toml
 [dependencies]
-designware_mobile_storage = { git = "https://github.com/nifeos/designware_mobile_storage", rev = "<commit>" }
+designware_mobile_storage = { git = "https://github.com/partsfoundry/designware_mobile_storage", rev = "<commit>" }
 ```
 
 Hand `HostController::new` your register window, the controller's input clock and the first input,
@@ -75,7 +75,7 @@ kind and size, fill or check its blocks, fail the next block read, or leave the 
 
 ```toml
 [dev-dependencies]
-designware_mobile_storage = { git = "https://github.com/nifeos/designware_mobile_storage", rev = "<commit>", features = ["simulator"] }
+designware_mobile_storage = { git = "https://github.com/partsfoundry/designware_mobile_storage", rev = "<commit>", features = ["simulator"] }
 ```
 
 ```rust,ignore
