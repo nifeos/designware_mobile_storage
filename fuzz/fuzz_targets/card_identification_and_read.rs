@@ -92,11 +92,11 @@ fuzz_target!(|data: &[u8]| {
     } else {
         address
     };
-    let mut buffer = [0u8; MAXIMUM_BLOCKS_PER_READ * BLOCK_BYTES];
+    let mut buffer = [[0u8; BLOCK_BYTES]; MAXIMUM_BLOCKS_PER_READ];
     let _ = sd::read_blocks(
         &mut host,
         &card,
         logical_block_address,
-        &mut buffer[..blocks_to_read * BLOCK_BYTES],
+        &mut buffer[..blocks_to_read],
     );
 });

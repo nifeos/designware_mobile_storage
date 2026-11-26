@@ -1238,7 +1238,7 @@ mod tests {
         let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().writes.clear();
         let mut block = [0u8; 512];
-        sd::read_blocks(&mut h, &card, 1, &mut block).unwrap();
+        sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0).unwrap();
         let read = core::mem::take(&mut h.registers_mut().writes);
         assert!(
             !read
@@ -1249,7 +1249,7 @@ mod tests {
             registers::CONTROL_REGISTER,
             1 << 8 | registers::CONTROL_QUEUE_RESET
         )));
-        sd::write_blocks(&mut h, &card, 1, &block).unwrap();
+        sd::write_blocks(&mut h, &card, 1, block.as_chunks().0).unwrap();
         let write = &h.registers_mut().writes;
         assert!(
             !write
@@ -1263,7 +1263,7 @@ mod tests {
         // A FIFO reset that never clears stops the command before it is sent.
         h.registers_mut().reset_stuck = true;
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::ResetStuck(_)))
         ));
     }
@@ -1283,7 +1283,7 @@ mod tests {
             .write(registers::CONTROL_REGISTER, registers::CONTROL_QUEUE_RESET);
         h.registers_mut().writes.clear();
         let mut block = [0u8; 512];
-        sd::read_blocks(&mut h, &card, 1, &mut block).unwrap();
+        sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0).unwrap();
         let read = &h.registers_mut().writes;
         assert!(read.contains(&(registers::CONTROL_REGISTER, registers::CONTROL_QUEUE_RESET)));
     }
@@ -1328,7 +1328,7 @@ mod tests {
         h.registers_mut().stall_after = Some(128);
         let mut block = [0u8; 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::DataTimeout(17, _, 384)))
         ));
         let mut h = take(SimulatedHostController::new(
@@ -1339,7 +1339,7 @@ mod tests {
         let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().stall_after = Some(128);
         assert!(matches!(
-            sd::write_blocks(&mut h, &card, 1, &block),
+            sd::write_blocks(&mut h, &card, 1, block.as_chunks().0),
             Err(BlockTransferError::Host(Error::DataTimeout(24, _, 256)))
         ));
     }
@@ -1362,7 +1362,7 @@ mod tests {
         h.registers_mut().end_early = true;
         let r = within_ten_seconds(move || {
             let mut block = [0u8; 512];
-            sd::read_blocks(&mut h, &card, 1, &mut block)
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0)
         });
         assert!(matches!(
             r,
@@ -1382,10 +1382,10 @@ mod tests {
         ));
         let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         let data: Vec<u8> = (0..512).map(|i| (i % 253) as u8).collect();
-        sd::write_blocks(&mut h, &card, 5, &data).unwrap();
+        sd::write_blocks(&mut h, &card, 5, data.as_chunks().0).unwrap();
         h.registers_mut().overreport_fill = true;
         let mut back = [0u8; 512];
-        sd::read_blocks(&mut h, &card, 5, &mut back).unwrap();
+        sd::read_blocks(&mut h, &card, 5, back.as_chunks_mut().0).unwrap();
         assert_eq!(back[..], data[..]);
     }
 
@@ -1402,7 +1402,7 @@ mod tests {
         ));
         let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().writes.clear();
-        sd::write_blocks(&mut h, &card, 1, &[0xa5; 1024]).unwrap();
+        sd::write_blocks(&mut h, &card, 1, ([0xa5; 1024]).as_chunks().0).unwrap();
         // The FIFO's own writes are not recorded, so what follows the data command, up to the
         // next command's clearing, is one clearing per batch: 256 words in batches of the depth.
         let writes = &h.registers_mut().writes;
@@ -1443,7 +1443,7 @@ mod tests {
         h.registers_mut().overreport_fill = true;
         let mut block = [0u8; 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::DataTimeout(17, _, 384)))
         ));
     }
@@ -1461,7 +1461,7 @@ mod tests {
         h.registers_mut().crc_error_at_end = true;
         let start = h.registers_mut().now_microseconds();
         assert!(matches!(
-            sd::write_blocks(&mut h, &card, 1, &[0u8; 512]),
+            sd::write_blocks(&mut h, &card, 1, ([0u8; 512]).as_chunks().0),
             Err(BlockTransferError::Host(Error::Data(24, raw_interrupt_status))) if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_CRC_ERROR != 0
         ));
         assert!(h.registers_mut().now_microseconds() - start < DATA_DEADLINE_MICROSECONDS);
@@ -1480,7 +1480,7 @@ mod tests {
         let start = h.registers_mut().now_microseconds();
         let mut block = [0u8; 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::Data(17, _)))
         ));
         assert!(h.registers_mut().now_microseconds() - start < DATA_DEADLINE_MICROSECONDS);
@@ -1497,7 +1497,7 @@ mod tests {
         let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().late_automatic_command_done = 5;
         let mut blocks = [0u8; 4 * 512];
-        sd::read_blocks(&mut h, &card, 1, &mut blocks).unwrap();
+        sd::read_blocks(&mut h, &card, 1, blocks.as_chunks_mut().0).unwrap();
         assert_ne!(
             h.registers_mut()
                 .peek(registers::RAW_INTERRUPT_STATUS_REGISTER)
@@ -1631,7 +1631,7 @@ mod tests {
         let start = h.registers_mut().now_microseconds();
         let mut block = [0u8; 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::DataTimeout(17, raw_interrupt_status, 512)))
                 if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_READ_TIMEOUT != 0
         ));
@@ -1655,17 +1655,17 @@ mod tests {
         h.registers_mut().commands.clear();
         let mut blocks = [0u8; 4 * 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 8, &mut blocks),
+            sd::read_blocks(&mut h, &card, 8, blocks.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::Data(18, _)))
         ));
         assert_eq!(h.registers_mut().commands, [(18, 8), (12, 0)]);
-        sd::read_blocks(&mut h, &card, 8, &mut blocks).unwrap();
+        sd::read_blocks(&mut h, &card, 8, blocks.as_chunks_mut().0).unwrap();
         assert_eq!(blocks[512], 0x5a);
 
         h.registers_mut().fail_next_read_crc = true;
         h.registers_mut().commands.clear();
         let mut block = [0u8; 512];
-        assert!(sd::read_blocks(&mut h, &card, 8, &mut block).is_err());
+        assert!(sd::read_blocks(&mut h, &card, 8, block.as_chunks_mut().0).is_err());
         assert_eq!(h.registers_mut().commands, [(17, 8)]);
     }
 
@@ -1683,12 +1683,12 @@ mod tests {
         h.registers_mut().commands.clear();
         let data = [0xa5u8; 2 * 512];
         assert!(matches!(
-            sd::write_blocks(&mut h, &card, 4, &data),
+            sd::write_blocks(&mut h, &card, 4, data.as_chunks().0),
             Err(BlockTransferError::Host(Error::Data(25, _)))
         ));
         assert_eq!(h.registers_mut().commands, [(25, 4), (12, 0)]);
         h.registers_mut().crc_error_at_end = false;
-        sd::write_blocks(&mut h, &card, 4, &data).unwrap();
+        sd::write_blocks(&mut h, &card, 4, data.as_chunks().0).unwrap();
         assert_eq!(h.registers_mut().storage[5][0], 0xa5);
     }
 
@@ -1704,7 +1704,7 @@ mod tests {
         let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().commands.clear();
         let mut blocks = [0u8; 2 * 512];
-        sd::read_blocks(&mut h, &card, 1, &mut blocks).unwrap();
+        sd::read_blocks(&mut h, &card, 1, blocks.as_chunks_mut().0).unwrap();
         assert_eq!(h.registers_mut().commands, [(18, 1), (12, 0)]);
     }
 }

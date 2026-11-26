@@ -735,7 +735,7 @@ fn any_card() -> crate::sd::Card {
 fn reading_a_block_never_writes_the_card_or_leaves_the_region() {
     let mut host = adversarial_direct_memory_access_host();
     let card = any_card();
-    let mut buffer = [0u8; crate::sd::BLOCK_BYTES];
+    let mut buffer = [[0u8; crate::sd::BLOCK_BYTES]; 1];
     let _ = crate::sd::read_blocks(&mut host, &card, kani::any(), &mut buffer);
     assert!(host.registers_mut().write_commands == 0);
 }
@@ -752,7 +752,7 @@ fn writing_a_block_sends_only_the_block_asked_for() {
     let mut host = adversarial_direct_memory_access_host();
     let card = any_card();
     let logical_block_address: u64 = kani::any();
-    let buffer = [0u8; crate::sd::BLOCK_BYTES];
+    let buffer = [[0u8; crate::sd::BLOCK_BYTES]; 1];
     let _ = crate::sd::write_blocks(&mut host, &card, logical_block_address, &buffer);
     let window = host.registers_mut();
     assert!(window.write_commands <= 1);

@@ -604,9 +604,8 @@ fn multimedia_card_power_up<R: RegisterWindowAndClock, D: DirectMemoryAccessRegi
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BlockTransferError {
-    /// The buffer is empty or not a whole number of blocks.
-    Length,
-    /// The range runs past the card's end (or past what a 32-bit address reaches).
+    /// The buffer holds no block, or the range runs past the card's end (or past what a 32-bit
+    /// address reaches).
     Range,
     /// The controller or the card failed.
     Host(Error),
@@ -617,8 +616,9 @@ pub enum BlockTransferError {
 impl core::fmt::Display for BlockTransferError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Length => f.write_str("the buffer is empty or not a whole number of blocks"),
-            Self::Range => f.write_str("the block range runs past what the card can address"),
+            Self::Range => f.write_str(
+                "the buffer holds no block, or the block range runs past what the card can address",
+            ),
             Self::Host(e) => write!(f, "the transfer failed: {e}"),
             Self::Status(status) => write!(f, "the card reported an error (status {status:#x})"),
         }
@@ -670,14 +670,12 @@ fn data_command(argument: u32, blocks: u32, write: bool) -> Command {
 
 /// The block count and the address argument of a transfer of `len` bytes, once both are admitted.
 fn check(
-    len: usize,
+    count: usize,
     card: &Card,
     logical_block_address: u64,
 ) -> Result<(u32, u32), BlockTransferError> {
-    if len == 0 || !len.is_multiple_of(BLOCK_BYTES) {
-        return Err(BlockTransferError::Length);
-    }
-    let blocks = (len / BLOCK_BYTES) as u64;
+    // An empty buffer is refused here too: `can_address_blocks` admits no range of zero blocks.
+    let blocks = count as u64;
     // One refusal for both tests. A range `can_address_blocks` admits starts below 2^32 blocks
     // on a block-addressed card and below 2^23 on a byte-addressed one, so its argument always
     // fits; `an_admitted_range_is_inside_the_card_and_the_command_argument` proves the bound.
@@ -700,19 +698,41 @@ fn check(
 /// **Read whole blocks from `logical_block_address` into `buffer`**, one command: `CMD17` for one
 /// block, `CMD18` with the automatic stop for more.
 ///
+/// The buffer is a slice of blocks, so it always holds a whole number of them. A caller with
+/// bytes takes the blocks out of them with [`slice::as_chunks_mut`]:
+///
+/// ```
+/// # #[cfg(not(feature = "simulator"))] fn main() {}
+/// # #[cfg(feature = "simulator")] fn main() {
+/// # use designware_mobile_storage::{SimulatedHostController, host_controller::HostController};
+/// use designware_mobile_storage::sd::{self, BLOCK_BYTES, BusWidth, CardKind};
+///
+/// # let simulator = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+/// # let (mut host, _identity) = HostController::new(simulator, 50_000_000, None).unwrap();
+/// let card = sd::identify(&mut host, BusWidth::Four).unwrap();
+/// let mut bytes = [0u8; 4 * BLOCK_BYTES];
+/// let (blocks, rest) = bytes.as_chunks_mut::<BLOCK_BYTES>();
+/// assert!(rest.is_empty());
+/// sd::read_blocks(&mut host, &card, 8, blocks).unwrap();
+/// # }
+/// ```
+///
 /// # Errors
 ///
-/// [`BlockTransferError::Length`] or [`BlockTransferError::Range`] before anything is sent; otherwise what the
-/// controller or the card reported.
+/// [`BlockTransferError::Range`] before anything is sent; otherwise what the controller or the
+/// card reported.
 pub fn read_blocks<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
     host: &mut HostController<R, D>,
     card: &Card,
     logical_block_address: u64,
-    buffer: &mut [u8],
+    buffer: &mut [[u8; BLOCK_BYTES]],
 ) -> Result<(), BlockTransferError> {
     let (blocks, argument) = check(buffer.len(), card, logical_block_address)?;
     let r1 = host
-        .read_data(&data_command(argument, blocks, false), buffer)
+        .read_data(
+            &data_command(argument, blocks, false),
+            buffer.as_flattened_mut(),
+        )
         .map_err(BlockTransferError::Host)?;
     if r1[0] & R1_ERROR_MASK != 0 {
         return Err(BlockTransferError::Status(r1[0]));
@@ -730,11 +750,11 @@ pub fn write_blocks<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
     host: &mut HostController<R, D>,
     card: &Card,
     logical_block_address: u64,
-    buffer: &[u8],
+    buffer: &[[u8; BLOCK_BYTES]],
 ) -> Result<(), BlockTransferError> {
     let (blocks, argument) = check(buffer.len(), card, logical_block_address)?;
     let r1 = host
-        .write_data(&data_command(argument, blocks, true), buffer)
+        .write_data(&data_command(argument, blocks, true), buffer.as_flattened())
         .map_err(BlockTransferError::Host)?;
     if r1[0] & R1_ERROR_MASK != 0 {
         return Err(BlockTransferError::Status(r1[0]));
@@ -781,22 +801,16 @@ mod tests {
     }
 
     /// One command moves at most `u32::MAX / 512` blocks, because `BYTCNT` is a 32-bit byte count.
-    /// `check` is given lengths it is never handed a buffer of, so nothing is allocated.
+    /// `check` is given block counts it is never handed a buffer of, so nothing is allocated.
     #[test]
     fn one_command_moves_no_more_blocks_than_a_32_bit_byte_count_holds() {
         let huge = card(1 << 40, true);
         let most = (u32::MAX / BLOCK_BYTES as u32) as usize;
         assert_eq!(most, 8_388_607);
-        assert_eq!(check(most * BLOCK_BYTES, &huge, 0), Ok((most as u32, 0)));
-        assert_eq!(
-            check((most + 1) * BLOCK_BYTES, &huge, 0),
-            Err(BlockTransferError::Range)
-        );
-        assert_eq!(
-            check((most + 2) * BLOCK_BYTES, &huge, 0),
-            Err(BlockTransferError::Range)
-        );
-        assert_eq!(check(512 * BLOCK_BYTES, &huge, 0), Ok((512, 0)));
+        assert_eq!(check(most, &huge, 0), Ok((most as u32, 0)));
+        assert_eq!(check(most + 1, &huge, 0), Err(BlockTransferError::Range));
+        assert_eq!(check(most + 2, &huge, 0), Err(BlockTransferError::Range));
+        assert_eq!(check(512, &huge, 0), Ok((512, 0)));
     }
 
     /// The argument is the block on a block-addressed card and its first byte on a byte-addressed
@@ -821,9 +835,6 @@ mod tests {
         assert_eq!(bytes.block_address_argument(last + 1), None);
         assert_eq!(bytes.block_address_argument(1 << 55), None);
         assert_eq!(bytes.block_address_argument(u64::MAX), None);
-        assert_eq!(
-            check(BLOCK_BYTES, &bytes, last + 1),
-            Err(BlockTransferError::Range)
-        );
+        assert_eq!(check(1, &bytes, last + 1), Err(BlockTransferError::Range));
     }
 }

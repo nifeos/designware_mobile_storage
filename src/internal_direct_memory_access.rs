@@ -731,13 +731,13 @@ mod tests {
     fn a_chain_moves_the_cards_bytes_in_both_directions_as_the_queue_does() {
         let (mut h, card, memory) = polled(4);
         let first = pattern(0x5a, 9 * 512);
-        sd::write_blocks(&mut h, &card, 100, &first).unwrap();
+        sd::write_blocks(&mut h, &card, 100, first.as_chunks().0).unwrap();
         let mut h = with_internal_direct_memory_access(h, &memory);
         let mut back = vec![0u8; 9 * 512];
-        sd::read_blocks(&mut h, &card, 100, &mut back).unwrap();
+        sd::read_blocks(&mut h, &card, 100, back.as_chunks_mut().0).unwrap();
         assert_eq!(back, first);
         let second = pattern(0xa5, 9 * 512);
-        sd::write_blocks(&mut h, &card, 300, &second).unwrap();
+        sd::write_blocks(&mut h, &card, 300, second.as_chunks().0).unwrap();
         for i in 0..2 {
             assert_eq!(
                 memory.read_u32(i * DESCRIPTOR_BYTES) & DESCRIPTOR_OWNED_BY_CONTROLLER,
@@ -749,7 +749,7 @@ mod tests {
         assert_eq!(bus.device_written, 9 * 512);
         drop(bus);
         let mut h = polled_again(h);
-        sd::read_blocks(&mut h, &card, 300, &mut back).unwrap();
+        sd::read_blocks(&mut h, &card, 300, back.as_chunks_mut().0).unwrap();
         assert_eq!(back, second);
         assert!(!h.registers_mut().stray_queue_write);
     }
@@ -761,11 +761,11 @@ mod tests {
     fn a_read_is_over_when_its_last_descriptor_closes_not_at_data_transfer_over() {
         let (mut h, card, memory) = polled(3);
         let data = pattern(0x33, 16 * 512);
-        sd::write_blocks(&mut h, &card, 40, &data).unwrap();
+        sd::write_blocks(&mut h, &card, 40, data.as_chunks().0).unwrap();
         let mut h = with_internal_direct_memory_access(h, &memory);
         h.registers_mut().direct_memory_access_words_per_step = Some(1);
         let mut back = vec![0u8; 16 * 512];
-        sd::read_blocks(&mut h, &card, 40, &mut back).unwrap();
+        sd::read_blocks(&mut h, &card, 40, back.as_chunks_mut().0).unwrap();
         assert_eq!(back, data);
     }
 
@@ -779,13 +779,13 @@ mod tests {
     fn a_transfer_that_keeps_closing_descriptors_outlasts_the_deadline() {
         let (mut h, card, memory) = polled(3);
         let data = pattern(0x5a, 16 * 512);
-        sd::write_blocks(&mut h, &card, 80, &data).unwrap();
+        sd::write_blocks(&mut h, &card, 80, data.as_chunks().0).unwrap();
         let mut h = with_internal_direct_memory_access(h, &memory);
         h.registers_mut().direct_memory_access_words_per_step = Some(1);
         h.registers_mut().clock_step = 700;
         let start = h.registers_mut().now_microseconds();
         let mut back = vec![0u8; 16 * 512];
-        sd::read_blocks(&mut h, &card, 80, &mut back).unwrap();
+        sd::read_blocks(&mut h, &card, 80, back.as_chunks_mut().0).unwrap();
         assert_eq!(back, data);
         assert!(h.registers_mut().now_microseconds() - start > DATA_DEADLINE_MICROSECONDS);
     }
@@ -800,7 +800,7 @@ mod tests {
         for (readings, completes) in [(511, true), (510, false)] {
             let (mut h, card, memory) = polled(3);
             let data = pattern(0x5a, 16 * 512);
-            sd::write_blocks(&mut h, &card, 80, &data).unwrap();
+            sd::write_blocks(&mut h, &card, 80, data.as_chunks().0).unwrap();
             let mut h = with_internal_direct_memory_access(h, &memory);
             h.registers_mut().direct_memory_access_words_per_step = Some(1);
             h.registers_mut().clock_step = 1_000;
@@ -809,7 +809,7 @@ mod tests {
                 ..Default::default()
             });
             let mut back = vec![0u8; 16 * 512];
-            let r = sd::read_blocks(&mut h, &card, 80, &mut back);
+            let r = sd::read_blocks(&mut h, &card, 80, back.as_chunks_mut().0);
             assert_eq!(r.is_ok(), completes, "{readings} readings: {r:?}");
         }
     }
@@ -831,18 +831,18 @@ mod tests {
         let (h, card, memory) = polled(3);
         let mut h = with_internal_direct_memory_access(h, &memory);
         let full = pattern(0x42, 16 * 512);
-        sd::write_blocks(&mut h, &card, 0, &full).unwrap();
+        sd::write_blocks(&mut h, &card, 0, full.as_chunks().0).unwrap();
         let mut back = vec![0u8; 16 * 512];
-        sd::read_blocks(&mut h, &card, 0, &mut back).unwrap();
+        sd::read_blocks(&mut h, &card, 0, back.as_chunks_mut().0).unwrap();
         assert_eq!(back, full);
         h.registers_mut().commands.clear();
         let mut big = vec![0u8; 17 * 512];
         assert_eq!(
-            sd::read_blocks(&mut h, &card, 0, &mut big),
+            sd::read_blocks(&mut h, &card, 0, big.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::BufferSize))
         );
         assert_eq!(
-            sd::write_blocks(&mut h, &card, 0, &big),
+            sd::write_blocks(&mut h, &card, 0, big.as_chunks().0),
             Err(BlockTransferError::Host(Error::BufferSize))
         );
         assert!(h.registers_mut().commands.is_empty());
@@ -874,11 +874,11 @@ mod tests {
         for (inject, expected) in cases {
             let (mut h, card, memory) = polled(3);
             let data = pattern(0x77, 9 * 512);
-            sd::write_blocks(&mut h, &card, 60, &data).unwrap();
+            sd::write_blocks(&mut h, &card, 60, data.as_chunks().0).unwrap();
             let mut h = with_internal_direct_memory_access(h, &memory);
             inject(h.registers_mut());
             let mut back = vec![0u8; 9 * 512];
-            match sd::read_blocks(&mut h, &card, 60, &mut back) {
+            match sd::read_blocks(&mut h, &card, 60, back.as_chunks_mut().0) {
                 Err(BlockTransferError::Host(e)) => assert!(expected(&e), "{e:?}"),
                 other => panic!("{other:?}"),
             }
@@ -907,7 +907,7 @@ mod tests {
                 simulator.read(registers::STATUS_REGISTER);
             }
             assert_eq!(memory.bus().device_written, written);
-            sd::read_blocks(&mut h, &card, 60, &mut back).unwrap();
+            sd::read_blocks(&mut h, &card, 60, back.as_chunks_mut().0).unwrap();
             assert_eq!(back, data);
         }
     }
@@ -934,7 +934,7 @@ mod tests {
             let (sender, receiver) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
                 let mut back = vec![0u8; 9 * 512];
-                let r = sd::read_blocks(&mut h, &card, 60, &mut back);
+                let r = sd::read_blocks(&mut h, &card, 60, back.as_chunks_mut().0);
                 let _ = sender.send((r, h.registers_mut().peek(registers::BUS_MODE_REGISTER)));
             });
             let (r, bus_mode) = receiver
@@ -967,7 +967,7 @@ mod tests {
         let mut h = with_internal_direct_memory_access(h, &memory);
         h.registers_mut().writes.clear();
         let mut block = [0u8; 512];
-        sd::read_blocks(&mut h, &card, 7, &mut block).unwrap();
+        sd::read_blocks(&mut h, &card, 7, block.as_chunks_mut().0).unwrap();
         let writes = &h.registers_mut().writes;
         let from = |w: (u32, u32)| writes.iter().position(|&x| x == w).unwrap();
         let armed = from((
@@ -1050,7 +1050,7 @@ mod tests {
         let mut h = with_internal_direct_memory_access(h, &memory);
         h.registers_mut().late_automatic_command_done = 5;
         let mut blocks = [0u8; 2 * 512];
-        sd::read_blocks(&mut h, &card, 7, &mut blocks).unwrap();
+        sd::read_blocks(&mut h, &card, 7, blocks.as_chunks_mut().0).unwrap();
         assert_ne!(
             h.registers_mut()
                 .peek(registers::RAW_INTERRUPT_STATUS_REGISTER)
@@ -1074,7 +1074,7 @@ mod tests {
                 | registers::CONTROL_DIRECT_MEMORY_ACCESS_ENABLE,
         );
         let mut block = [0u8; 512];
-        sd::read_blocks(&mut h, &card, 7, &mut block).unwrap();
+        sd::read_blocks(&mut h, &card, 7, block.as_chunks_mut().0).unwrap();
     }
 
     /// A reset that never clears is reported, not assumed done, with the word that holds it:
@@ -1109,7 +1109,7 @@ mod tests {
             hold(h.registers_mut());
             h.registers_mut().commands.clear();
             let mut block = [0u8; 512];
-            match sd::read_blocks(&mut h, &card, 7, &mut block) {
+            match sd::read_blocks(&mut h, &card, 7, block.as_chunks_mut().0) {
                 Err(BlockTransferError::Host(Error::ResetStuck(w))) => assert!(word(w), "{w:#x}"),
                 other => panic!("{other:?}"),
             }
@@ -1123,20 +1123,20 @@ mod tests {
     fn the_internal_direct_memory_access_read_matches_the_polled_one_until_the_bus_corrupts() {
         let (mut h, card, memory) = polled(17);
         let data = pattern(0x11, 128 * 512);
-        sd::write_blocks(&mut h, &card, 2048, &data).unwrap();
+        sd::write_blocks(&mut h, &card, 2048, data.as_chunks().0).unwrap();
         let mut reference = vec![0u8; 128 * 512];
-        sd::read_blocks(&mut h, &card, 2048, &mut reference).unwrap();
+        sd::read_blocks(&mut h, &card, 2048, reference.as_chunks_mut().0).unwrap();
         // Under Miri each 128-block command costs minutes, so a run reads fewer commands.
         let commands: u64 = if cfg!(miri) { 2 } else { 8 };
         let mut h = with_internal_direct_memory_access(h, &memory);
         let mut buffer = vec![0u8; 128 * 512];
-        sd::read_blocks(&mut h, &card, 2048, &mut buffer).unwrap();
+        sd::read_blocks(&mut h, &card, 2048, buffer.as_chunks_mut().0).unwrap();
         assert_eq!(buffer, reference);
         for k in 1..commands {
-            sd::read_blocks(&mut h, &card, 2048 + 128 * k, &mut buffer).unwrap();
+            sd::read_blocks(&mut h, &card, 2048 + 128 * k, buffer.as_chunks_mut().0).unwrap();
         }
         h.registers_mut().direct_memory_access_corrupts = true;
-        sd::read_blocks(&mut h, &card, 2048, &mut buffer).unwrap();
+        sd::read_blocks(&mut h, &card, 2048, buffer.as_chunks_mut().0).unwrap();
         assert_ne!(buffer, reference);
     }
 }

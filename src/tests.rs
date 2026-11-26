@@ -99,12 +99,12 @@ fn blocks_written_read_back_and_multi_block_transfers_stop_by_themselves() {
     let mut h = host(CardKind::SdHighCapacity, 8192);
     let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let data: Vec<u8> = (0..8 * BLOCK_BYTES).map(|i| (i * 7 % 251) as u8).collect();
-    sd::write_blocks(&mut h, &card, 100, &data).unwrap();
+    sd::write_blocks(&mut h, &card, 100, data.as_chunks().0).unwrap();
     let mut back = vec![0u8; 8 * BLOCK_BYTES];
-    sd::read_blocks(&mut h, &card, 100, &mut back).unwrap();
+    sd::read_blocks(&mut h, &card, 100, back.as_chunks_mut().0).unwrap();
     assert_eq!(back, data);
     let mut one = [0u8; BLOCK_BYTES];
-    sd::read_blocks(&mut h, &card, 103, &mut one).unwrap();
+    sd::read_blocks(&mut h, &card, 103, one.as_chunks_mut().0).unwrap();
     assert_eq!(one[..], data[3 * BLOCK_BYTES..4 * BLOCK_BYTES]);
     let simulator = h.into_registers();
     assert_eq!(simulator.written, (100..108).collect::<Vec<u64>>());
@@ -120,18 +120,22 @@ fn blocks_written_read_back_and_multi_block_transfers_stop_by_themselves() {
 }
 
 #[test]
-fn a_transfer_that_does_not_fit_the_card_or_the_buffer_is_refused_before_anything_is_sent() {
+fn a_transfer_that_is_empty_or_does_not_fit_the_card_is_refused_before_anything_is_sent() {
     let mut h = host(CardKind::SdHighCapacity, 8192);
     let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let sent = h.registers_mut().commands.len();
-    let mut buffer = [0u8; BLOCK_BYTES];
+    let mut buffer = [[0u8; BLOCK_BYTES]; 1];
     assert_eq!(
         sd::read_blocks(&mut h, &card, 8192, &mut buffer),
         Err(BlockTransferError::Range)
     );
     assert_eq!(
-        sd::read_blocks(&mut h, &card, 0, &mut buffer[..100]),
-        Err(BlockTransferError::Length)
+        sd::read_blocks(&mut h, &card, 0, &mut buffer[..0]),
+        Err(BlockTransferError::Range)
+    );
+    assert_eq!(
+        sd::write_blocks(&mut h, &card, 0, &[]),
+        Err(BlockTransferError::Range)
     );
     assert_eq!(
         sd::write_blocks(&mut h, &card, u64::MAX, &buffer),
@@ -151,10 +155,10 @@ fn a_controller_before_2_40a_reads_through_its_queue_at_0x100_and_gets_no_thresh
     );
     let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let data: Vec<u8> = (0..2 * BLOCK_BYTES).map(|i| (i % 253) as u8).collect();
-    sd::write_blocks(&mut h, &card, 7, &data).unwrap();
+    sd::write_blocks(&mut h, &card, 7, data.as_chunks().0).unwrap();
     let mut back = vec![0u8; 2 * BLOCK_BYTES];
     // A threshold write to 0x100 here would land in the FIFO and shift every word read.
-    sd::read_blocks(&mut h, &card, 7, &mut back).unwrap();
+    sd::read_blocks(&mut h, &card, 7, back.as_chunks_mut().0).unwrap();
     assert_eq!(back, data);
     assert!(!h.into_registers().stray_queue_write);
 }
@@ -169,7 +173,7 @@ fn a_read_whose_tail_is_below_the_watermark_is_drained_on_transfer_over() {
     let (mut h, _) = HostController::new(simulator, 50_000_000, Some(24)).unwrap();
     let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let mut one = [0u8; BLOCK_BYTES];
-    sd::read_blocks(&mut h, &card, 5, &mut one).unwrap();
+    sd::read_blocks(&mut h, &card, 5, one.as_chunks_mut().0).unwrap();
     assert_eq!(one, h.registers_mut().storage[5]);
 }
 
@@ -180,7 +184,7 @@ fn a_data_crc_error_is_reported_with_its_command() {
     h.registers_mut().fail_next_read_crc = true;
     let mut buffer = [0u8; BLOCK_BYTES];
     assert!(matches!(
-        sd::read_blocks(&mut h, &card, 0, &mut buffer),
+        sd::read_blocks(&mut h, &card, 0, buffer.as_chunks_mut().0),
         Err(BlockTransferError::Host(Error::Data(17, raw_interrupt_status))) if raw_interrupt_status & crate::registers::RAW_INTERRUPT_DATA_CRC_ERROR != 0
     ));
 }
@@ -193,16 +197,16 @@ fn a_card_is_identified_and_read_through_its_partition_table_without_a_write() {
         HostController::new(master_boot_record_card(8192, 2048), 50_000_000, Some(32)).unwrap();
     let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let mut sector = [0u8; BLOCK_BYTES];
-    sd::read_blocks(&mut h, &card, 0, &mut sector).unwrap();
+    sd::read_blocks(&mut h, &card, 0, sector.as_chunks_mut().0).unwrap();
     assert_eq!(sector[510..512], [0x55, 0xaa]);
     assert_eq!(sector[446 + 8..446 + 12], 2048u32.to_le_bytes());
-    sd::read_blocks(&mut h, &card, 2048, &mut sector).unwrap();
+    sd::read_blocks(&mut h, &card, 2048, sector.as_chunks_mut().0).unwrap();
     assert_eq!(sector[510..512], [0x55, 0xaa]);
     assert_eq!(&sector[82..90], b"FAT32   ");
     let mut buffer = vec![0u8; 128 * BLOCK_BYTES];
     // Under Miri each 128-block command costs minutes, so a run reads fewer commands.
     for k in 0..if cfg!(miri) { 2u64 } else { 8 } {
-        sd::read_blocks(&mut h, &card, 2048 + 128 * k, &mut buffer).unwrap();
+        sd::read_blocks(&mut h, &card, 2048 + 128 * k, buffer.as_chunks_mut().0).unwrap();
     }
     let simulator = h.into_registers();
     assert!(simulator.written.is_empty());
@@ -240,7 +244,7 @@ fn the_same_blocks_read_back_at_every_clock_and_length_after_a_fresh_identificat
             let card_hertz = h.set_clock(hertz).unwrap();
             assert!(card_hertz <= hertz, "{card_hertz} Hz for {hertz} Hz");
             let destination = &mut buffer[..blocks * BLOCK_BYTES];
-            sd::read_blocks(&mut h, &card, 2048, destination).unwrap();
+            sd::read_blocks(&mut h, &card, 2048, destination.as_chunks_mut().0).unwrap();
             assert_eq!(destination, &want[..blocks * BLOCK_BYTES]);
             reads += 1;
         }
@@ -265,15 +269,15 @@ fn a_write_confined_to_the_gap_is_read_back_and_restored_exactly() {
     let first = u64::from(first);
     let (mut original, mut pattern, mut back) =
         (vec![0u8; bytes], vec![0u8; bytes], vec![0u8; bytes]);
-    sd::read_blocks(&mut h, &card, first, &mut original).unwrap();
+    sd::read_blocks(&mut h, &card, first, original.as_chunks_mut().0).unwrap();
     for (i, b) in pattern.iter_mut().enumerate() {
         *b = (i as u8).wrapping_mul(31) ^ 0x5a;
     }
-    sd::write_blocks(&mut h, &card, first, &pattern).unwrap();
-    sd::read_blocks(&mut h, &card, first, &mut back).unwrap();
+    sd::write_blocks(&mut h, &card, first, pattern.as_chunks().0).unwrap();
+    sd::read_blocks(&mut h, &card, first, back.as_chunks_mut().0).unwrap();
     assert_eq!(back, pattern);
-    sd::write_blocks(&mut h, &card, first, &original).unwrap();
-    sd::read_blocks(&mut h, &card, first, &mut back).unwrap();
+    sd::write_blocks(&mut h, &card, first, original.as_chunks().0).unwrap();
+    sd::read_blocks(&mut h, &card, first, back.as_chunks_mut().0).unwrap();
     assert_eq!(back, original);
     let simulator = h.into_registers();
     assert!(
@@ -618,7 +622,7 @@ fn a_status_error_on_a_transfer_is_reported_not_swallowed() {
     let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let mut one = [0u8; BLOCK_BYTES];
     assert!(matches!(
-        sd::read_blocks(&mut h, &card, 0, &mut one),
+        sd::read_blocks(&mut h, &card, 0, one.as_chunks_mut().0),
         Err(BlockTransferError::Status(_))
     ));
     // A single-block write is CMD24; its R1, then the status after programming, are each
@@ -630,7 +634,7 @@ fn a_status_error_on_a_transfer_is_reported_not_swallowed() {
     );
     let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     assert!(matches!(
-        sd::write_blocks(&mut h, &card, 9, &one),
+        sd::write_blocks(&mut h, &card, 9, one.as_chunks().0),
         Err(BlockTransferError::Status(_))
     ));
     let mut h = faulty(
@@ -640,13 +644,13 @@ fn a_status_error_on_a_transfer_is_reported_not_swallowed() {
     );
     let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     assert!(matches!(
-        sd::write_blocks(&mut h, &card, 9, &one),
+        sd::write_blocks(&mut h, &card, 9, one.as_chunks().0),
         Err(BlockTransferError::Status(_))
     ));
     let mut h = host(CardKind::SdHighCapacity, 8192);
     let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     one[0] = 0x77;
-    sd::write_blocks(&mut h, &card, 9, &one).unwrap();
+    sd::write_blocks(&mut h, &card, 9, one.as_chunks().0).unwrap();
     assert_eq!(h.registers_mut().storage[9][0], 0x77);
     assert_eq!(
         h.registers_mut().commands.iter().rev().nth(1).map(|c| c.0),
@@ -675,7 +679,7 @@ fn sequential_long_reads_walk_up_from_the_partition_and_stop_at_the_card_end() {
     let mut buffer = vec![0u8; 256 * BLOCK_BYTES];
     let mut at = 16u64;
     while at + 256 <= card.blocks {
-        sd::read_blocks(&mut h, &card, at, &mut buffer).unwrap();
+        sd::read_blocks(&mut h, &card, at, buffer.as_chunks_mut().0).unwrap();
         at += 256;
     }
     // Blocks 16 to 2047 fit seven 256-block reads and not eight.
@@ -992,12 +996,8 @@ fn every_card_error_displays_its_sentence() {
     }
     let block_transfer_errors = [
         (
-            BlockTransferError::Length,
-            "the buffer is empty or not a whole number of blocks",
-        ),
-        (
             BlockTransferError::Range,
-            "the block range runs past what the card can address",
+            "the buffer holds no block, or the block range runs past what the card can address",
         ),
         (
             BlockTransferError::Host(Error::Busy),

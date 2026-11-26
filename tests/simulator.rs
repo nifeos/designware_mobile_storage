@@ -13,7 +13,7 @@ fn first_sector<R: RegisterWindowAndClock>(registers: R) -> Option<[u8; 512]> {
     let (mut host, _id) = HostController::new(registers, 50_000_000, Some(32)).ok()?;
     let card = sd::identify(&mut host, sd::BusWidth::Four).ok()?; // at most a 4-bit bus
     let mut buffer = [0u8; 512];
-    sd::read_blocks(&mut host, &card, 0, &mut buffer).ok()?;
+    sd::read_blocks(&mut host, &card, 0, buffer.as_chunks_mut().0).ok()?;
     Some(buffer)
 }
 
@@ -44,9 +44,9 @@ fn every_card_kind_is_identified_and_written_and_read_back() {
         assert_eq!(card.kind(), kind);
         assert_eq!(card.blocks(), 4096);
         let data: Vec<u8> = (0..3 * BLOCK_BYTES).map(|i| (i % 251) as u8).collect();
-        sd::write_blocks(&mut host, &card, 9, &data).unwrap();
+        sd::write_blocks(&mut host, &card, 9, data.as_chunks().0).unwrap();
         let mut back = vec![0u8; data.len()];
-        sd::read_blocks(&mut host, &card, 9, &mut back).unwrap();
+        sd::read_blocks(&mut host, &card, 9, back.as_chunks_mut().0).unwrap();
         assert_eq!(back, data);
         let simulator = host.into_registers();
         assert_eq!(
@@ -65,10 +65,10 @@ fn a_failed_block_read_is_reported_and_the_next_one_succeeds() {
     host.registers_mut().fail_next_block_read();
     let mut block = [0u8; BLOCK_BYTES];
     assert!(matches!(
-        sd::read_blocks(&mut host, &card, 3, &mut block),
+        sd::read_blocks(&mut host, &card, 3, block.as_chunks_mut().0),
         Err(BlockTransferError::Host(_))
     ));
-    sd::read_blocks(&mut host, &card, 3, &mut block).unwrap();
+    sd::read_blocks(&mut host, &card, 3, block.as_chunks_mut().0).unwrap();
     assert_eq!(block, [0x3c; BLOCK_BYTES]);
 }
 
@@ -83,9 +83,9 @@ fn blocks_move_through_the_internal_direct_memory_access_controller() {
     );
     let card = sd::identify(&mut host, sd::BusWidth::Four).unwrap();
     let data: Vec<u8> = (0..2 * BLOCK_BYTES).map(|i| (i % 241) as u8).collect();
-    sd::write_blocks(&mut host, &card, 100, &data).unwrap();
+    sd::write_blocks(&mut host, &card, 100, data.as_chunks().0).unwrap();
     let mut back = vec![0u8; data.len()];
-    sd::read_blocks(&mut host, &card, 100, &mut back).unwrap();
+    sd::read_blocks(&mut host, &card, 100, back.as_chunks_mut().0).unwrap();
     assert_eq!(back, data);
     assert_eq!(
         host.into_registers().card_blocks()[101][..],
