@@ -130,6 +130,17 @@ pub(crate) const DESCRIPTOR_BUFFER_1_BYTES_MASK: u32 = 0x1fff;
 // is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
 const _: () = assert!(DESCRIPTOR_OWNED_BY_CONTROLLER + DESCRIPTOR_CHAINED == 0x8000_0010);
+// The four `CONTROL_REGISTER` bits that stopping the IDMAC clears share no bit (25, 5, 2 and 1),
+// which the compiler checks here; the mutation exemption for `internal_direct_memory_access_stop`
+// names this check.
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(
+    registers::CONTROL_USE_INTERNAL_DIRECT_MEMORY_ACCESS_CONTROLLER
+        + registers::CONTROL_DIRECT_MEMORY_ACCESS_ENABLE
+        + registers::CONTROL_DIRECT_MEMORY_ACCESS_RESET
+        + registers::CONTROL_QUEUE_RESET
+        == 0x0200_0026
+);
 
 /// Why a region was refused before anything was written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -489,9 +500,14 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             registers::BUS_MODE_REGISTER,
             registers::BUS_MODE_SOFTWARE_RESET,
         );
+        // The two resets are masked out of `control` before they are set, which changes nothing
+        // written (a bit cleared and then set is set) but makes setting them by `|` and by `^` the
+        // same, whatever the register held.
         let control = self.registers.read(registers::CONTROL_REGISTER)
             & !(registers::CONTROL_USE_INTERNAL_DIRECT_MEMORY_ACCESS_CONTROLLER
-                | registers::CONTROL_DIRECT_MEMORY_ACCESS_ENABLE);
+                | registers::CONTROL_DIRECT_MEMORY_ACCESS_ENABLE
+                | registers::CONTROL_DIRECT_MEMORY_ACCESS_RESET
+                | registers::CONTROL_QUEUE_RESET);
         self.registers.write(
             registers::CONTROL_REGISTER,
             control
