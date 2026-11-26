@@ -35,7 +35,7 @@ use designware_mobile_storage::sd;
 
 fn first_sector<R: RegisterWindowAndClock>(registers: R) -> Option<[u8; 512]> {
     let (mut host, _id) = HostController::new(registers, 50_000_000, Some(32)).ok()?;
-    let card = sd::identify(&mut host, 4).ok()?; // at most a 4-bit bus
+    let card = sd::identify(&mut host, sd::BusWidth::Four).ok()?; // at most a 4-bit bus
     let mut buffer = [0u8; 512];
     sd::read_blocks(&mut host, &card, 0, &mut buffer).ok()?;
     Some(buffer)

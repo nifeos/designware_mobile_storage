@@ -11,7 +11,7 @@ use designware_mobile_storage::{SimulatedDirectMemoryAccessRegion, SimulatedHost
 
 fn first_sector<R: RegisterWindowAndClock>(registers: R) -> Option<[u8; 512]> {
     let (mut host, _id) = HostController::new(registers, 50_000_000, Some(32)).ok()?;
-    let card = sd::identify(&mut host, 4).ok()?; // at most a 4-bit bus
+    let card = sd::identify(&mut host, sd::BusWidth::Four).ok()?; // at most a 4-bit bus
     let mut buffer = [0u8; 512];
     sd::read_blocks(&mut host, &card, 0, &mut buffer).ok()?;
     Some(buffer)
@@ -40,7 +40,7 @@ fn every_card_kind_is_identified_and_written_and_read_back() {
     ] {
         let simulator = SimulatedHostController::new(kind, 4096);
         let (mut host, _) = HostController::new(simulator, 50_000_000, None).unwrap();
-        let card = sd::identify(&mut host, 4).unwrap();
+        let card = sd::identify(&mut host, sd::BusWidth::Four).unwrap();
         assert_eq!(card.kind, kind);
         assert_eq!(card.blocks, 4096);
         let data: Vec<u8> = (0..3 * BLOCK_BYTES).map(|i| (i % 251) as u8).collect();
@@ -61,7 +61,7 @@ fn a_failed_block_read_is_reported_and_the_next_one_succeeds() {
     let mut simulator = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
     simulator.card_blocks_mut()[3] = [0x3c; BLOCK_BYTES];
     let (mut host, _) = HostController::new(simulator, 50_000_000, None).unwrap();
-    let card = sd::identify(&mut host, 4).unwrap();
+    let card = sd::identify(&mut host, sd::BusWidth::Four).unwrap();
     host.registers_mut().fail_next_block_read();
     let mut block = [0u8; BLOCK_BYTES];
     assert!(matches!(
@@ -81,7 +81,7 @@ fn blocks_move_through_the_internal_direct_memory_access_controller() {
     let mut host = host.with_internal_direct_memory_access(
         InternalDirectMemoryAccess::new(region, &id).expect("the region fits the controller"),
     );
-    let card = sd::identify(&mut host, 4).unwrap();
+    let card = sd::identify(&mut host, sd::BusWidth::Four).unwrap();
     let data: Vec<u8> = (0..2 * BLOCK_BYTES).map(|i| (i % 241) as u8).collect();
     sd::write_blocks(&mut host, &card, 100, &data).unwrap();
     let mut back = vec![0u8; data.len()];
@@ -116,7 +116,10 @@ fn a_standard_capacity_card_may_be_larger_than_a_few_megabytes() {
     // 8192 blocks is 4 MiB, well inside the one gibibyte a standard-capacity CSD can describe.
     let simulator = SimulatedHostController::new(CardKind::SdVersion2, 8192);
     let (mut host, _) = HostController::new(simulator, 50_000_000, None).unwrap();
-    assert_eq!(sd::identify(&mut host, 4).unwrap().blocks, 8192);
+    assert_eq!(
+        sd::identify(&mut host, sd::BusWidth::Four).unwrap().blocks,
+        8192
+    );
 }
 
 #[test]

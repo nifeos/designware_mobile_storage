@@ -36,7 +36,7 @@ const STANDARD_CAPACITY_MAXIMUM_BLOCKS: usize = 4096 * 512;
 /// let mut simulator = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
 /// simulator.card_blocks_mut()[7] = [0x5a; BLOCK_BYTES];
 /// let (mut host, _) = HostController::new(simulator, 50_000_000, None).unwrap();
-/// let card = sd::identify(&mut host, 4).unwrap();
+/// let card = sd::identify(&mut host, sd::BusWidth::Four).unwrap();
 /// let mut block = [0u8; BLOCK_BYTES];
 /// sd::read_blocks(&mut host, &card, 7, &mut block).unwrap();
 /// assert_eq!(block, [0x5a; BLOCK_BYTES]);
@@ -194,7 +194,7 @@ mod tests {
         let mut host = host.with_internal_direct_memory_access(
             InternalDirectMemoryAccess::new(region, &id).unwrap(),
         );
-        let card = sd::identify(&mut host, 4).unwrap();
+        let card = sd::identify(&mut host, sd::BusWidth::Four).unwrap();
         let data = vec![0x6d; 2 * BLOCK_BYTES];
         sd::write_blocks(&mut host, &card, 100, &data).unwrap();
         let mut back = vec![0u8; data.len()];

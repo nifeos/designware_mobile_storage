@@ -41,11 +41,14 @@ fn master_boot_record_card(blocks: usize, first: u32) -> SimulatedHostController
 #[test]
 fn a_high_capacity_sd_card_is_identified_selected_and_widened_in_the_specification_order() {
     let mut h = host(CardKind::SdHighCapacity, 8192);
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     assert_eq!(card.kind, sd::CardKind::SdHighCapacity);
     assert!(card.block_addressed);
     assert_eq!(card.blocks, 8192);
-    assert_eq!((card.bus_width, card.clock_hertz), (4, 25_000_000));
+    assert_eq!(
+        (card.bus_width, card.clock_hertz),
+        (sd::BusWidth::Four, 25_000_000)
+    );
     assert_eq!(&card.card_identification.name[..5], b"TEST1");
     let simulator = h.into_registers();
     let order: Vec<u8> = simulator.commands.iter().map(|c| c.0).collect();
@@ -64,13 +67,13 @@ fn a_high_capacity_sd_card_is_identified_selected_and_widened_in_the_specificati
 #[test]
 fn an_old_sd_card_is_byte_addressed_and_an_embedded_multimedia_card_is_told_apart_by_its_silence() {
     let mut h = host(CardKind::SdVersion1, 4096);
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     assert_eq!(card.kind, sd::CardKind::SdVersion1);
     assert!(!card.block_addressed);
     assert_eq!(card.block_address_argument(3), Some(3 * 512));
 
     let mut h = host(CardKind::MultimediaCard, 16_384);
-    let card = sd::identify(&mut h, 8).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Eight).unwrap();
     assert_eq!(card.kind, sd::CardKind::MultimediaCard);
     assert_eq!(
         card.relative_card_address,
@@ -79,14 +82,14 @@ fn an_old_sd_card_is_byte_addressed_and_an_embedded_multimedia_card_is_told_apar
     assert!(card.block_addressed);
     // The size came from EXT_CSD, not the CSD's placeholder.
     assert_eq!(card.blocks, 16_384);
-    assert_eq!(card.bus_width, 1);
+    assert_eq!(card.bus_width, sd::BusWidth::One);
 }
 
 #[test]
 fn an_empty_slot_is_no_card_not_a_hang() {
     let mut h = host(CardKind::Empty, 1024);
     assert!(matches!(
-        sd::identify(&mut h, 4),
+        sd::identify(&mut h, sd::BusWidth::Four),
         Err(InitializationError::NoCard(Error::NoResponse(1)))
     ));
 }
@@ -94,7 +97,7 @@ fn an_empty_slot_is_no_card_not_a_hang() {
 #[test]
 fn blocks_written_read_back_and_multi_block_transfers_stop_by_themselves() {
     let mut h = host(CardKind::SdHighCapacity, 8192);
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let data: Vec<u8> = (0..8 * BLOCK_BYTES).map(|i| (i * 7 % 251) as u8).collect();
     sd::write_blocks(&mut h, &card, 100, &data).unwrap();
     let mut back = vec![0u8; 8 * BLOCK_BYTES];
@@ -119,7 +122,7 @@ fn blocks_written_read_back_and_multi_block_transfers_stop_by_themselves() {
 #[test]
 fn a_transfer_that_does_not_fit_the_card_or_the_buffer_is_refused_before_anything_is_sent() {
     let mut h = host(CardKind::SdHighCapacity, 8192);
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let sent = h.registers_mut().commands.len();
     let mut buffer = [0u8; BLOCK_BYTES];
     assert_eq!(
@@ -146,7 +149,7 @@ fn a_controller_before_2_40a_reads_through_its_queue_at_0x100_and_gets_no_thresh
         crate::registers::queue_offset(id.version_identification),
         0x100
     );
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let data: Vec<u8> = (0..2 * BLOCK_BYTES).map(|i| (i % 253) as u8).collect();
     sd::write_blocks(&mut h, &card, 7, &data).unwrap();
     let mut back = vec![0u8; 2 * BLOCK_BYTES];
@@ -164,7 +167,7 @@ fn a_read_whose_tail_is_below_the_watermark_is_drained_on_transfer_over() {
     simulator.strict_watermark = true;
     simulator.storage[5] = core::array::from_fn(|i| (i % 249) as u8);
     let (mut h, _) = HostController::new(simulator, 50_000_000, Some(24)).unwrap();
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let mut one = [0u8; BLOCK_BYTES];
     sd::read_blocks(&mut h, &card, 5, &mut one).unwrap();
     assert_eq!(one, h.registers_mut().storage[5]);
@@ -173,7 +176,7 @@ fn a_read_whose_tail_is_below_the_watermark_is_drained_on_transfer_over() {
 #[test]
 fn a_data_crc_error_is_reported_with_its_command() {
     let mut h = host(CardKind::SdHighCapacity, 8192);
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     h.registers_mut().fail_next_read_crc = true;
     let mut buffer = [0u8; BLOCK_BYTES];
     assert!(matches!(
@@ -188,7 +191,7 @@ fn a_data_crc_error_is_reported_with_its_command() {
 fn a_card_is_identified_and_read_through_its_partition_table_without_a_write() {
     let (mut h, _) =
         HostController::new(master_boot_record_card(8192, 2048), 50_000_000, Some(32)).unwrap();
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let mut sector = [0u8; BLOCK_BYTES];
     sd::read_blocks(&mut h, &card, 0, &mut sector).unwrap();
     assert_eq!(sector[510..512], [0x55, 0xaa]);
@@ -233,7 +236,7 @@ fn the_same_blocks_read_back_at_every_clock_and_length_after_a_fresh_identificat
     };
     for &hertz in clocks {
         for &blocks in lengths {
-            let card = sd::identify(&mut h, 4).unwrap();
+            let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
             let card_hertz = h.set_clock(hertz).unwrap();
             assert!(card_hertz <= hertz, "{card_hertz} Hz for {hertz} Hz");
             let destination = &mut buffer[..blocks * BLOCK_BYTES];
@@ -255,7 +258,7 @@ fn a_write_confined_to_the_gap_is_read_back_and_restored_exactly() {
     simulator.storage[2043][0] = 0x42;
     let before = simulator.storage.clone();
     let (mut h, _) = HostController::new(simulator, 50_000_000, Some(32)).unwrap();
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     // The eight sectors that end where the first partition starts, at 2048.
     let (first, count) = (2040u32, 8u32);
     let bytes = count as usize * BLOCK_BYTES;
@@ -329,7 +332,10 @@ fn a_sixteen_bit_queue_is_refused_at_the_door() {
     let (mut h, _) = HostController::new_returning_window(window, 50_000_000, None)
         .map_err(|(error, _)| error)
         .unwrap();
-    assert_eq!(sd::identify(&mut h, 4).unwrap().blocks, 1024);
+    assert_eq!(
+        sd::identify(&mut h, sd::BusWidth::Four).unwrap().blocks,
+        1024
+    );
 }
 
 #[test]
@@ -364,7 +370,7 @@ fn faulty(
 #[test]
 fn an_sd_2_0_standard_capacity_card_answers_the_echo_and_is_still_byte_addressed() {
     let mut h = host(CardKind::SdVersion2, 4096);
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     assert_eq!(card.kind, sd::CardKind::SdVersion2);
     assert!(!card.block_addressed);
     // It answered CMD8 but did not set CCS in its OCR, so it is not mistaken for SDHC.
@@ -375,7 +381,7 @@ fn an_sd_2_0_standard_capacity_card_answers_the_echo_and_is_still_byte_addressed
 fn a_wrong_interface_echo_is_refused_rather_than_guessed_at() {
     let mut h = faulty(CardKind::SdHighCapacity, 8192, &[(8, 0, Fault::EchoWrong)]);
     assert!(matches!(
-        sd::identify(&mut h, 4),
+        sd::identify(&mut h, sd::BusWidth::Four),
         Err(InitializationError::InterfaceCondition(r)) if r & 0xfff != 0x1aa
     ));
 }
@@ -426,7 +432,7 @@ fn power_up_tries_again_at_a_reading_exactly_on_its_deadline() {
         };
         let mut h = HostController::new(clock, 50_000_000, Some(32)).unwrap().0;
         assert!(
-            sd::identify(&mut h, 4).is_ok(),
+            sd::identify(&mut h, sd::BusWidth::Four).is_ok(),
             "{kind:?} gave up on the deadline itself"
         );
     }
@@ -450,7 +456,7 @@ fn a_card_that_never_finishes_power_up_is_reported_with_its_last_operation_condi
                 .0;
             let busy_done = card::OPERATION_CONDITIONS_BUSY_DONE;
             let reported = matches!(
-                sd::identify(&mut h, 4),
+                sd::identify(&mut h, sd::BusWidth::Four),
                 Err(InitializationError::PowerUp(conditions)) if conditions & busy_done == 0
             );
             let _ = sender.send(reported);
@@ -474,7 +480,7 @@ fn an_sd_2_0_card_silent_to_its_first_application_command_is_no_card_not_an_embe
         &[(55, 0, Fault::NoResponse)],
     );
     assert!(matches!(
-        sd::identify(&mut h, 4),
+        sd::identify(&mut h, sd::BusWidth::Four),
         Err(InitializationError::NoCard(Error::NoResponse(55)))
     ));
 }
@@ -488,7 +494,7 @@ fn each_identification_step_names_itself_when_the_card_goes_silent() {
             &[(index, 0, Fault::NoResponse)],
         );
         assert_eq!(
-            sd::identify(&mut h, 4),
+            sd::identify(&mut h, sd::BusWidth::Four),
             Err(InitializationError::Identify(
                 index,
                 Error::NoResponse(index)
@@ -502,7 +508,7 @@ fn each_identification_step_names_itself_when_the_card_goes_silent() {
         &[(3, 0, Fault::NoResponse)],
     );
     assert_eq!(
-        sd::identify(&mut h, 8),
+        sd::identify(&mut h, sd::BusWidth::Eight),
         Err(InitializationError::Identify(3, Error::NoResponse(3)))
     );
 }
@@ -517,7 +523,7 @@ fn each_configuration_step_names_itself_when_the_card_goes_silent() {
             &[(index, nth, Fault::NoResponse)],
         );
         assert_eq!(
-            sd::identify(&mut h, 4),
+            sd::identify(&mut h, sd::BusWidth::Four),
             Err(InitializationError::Configure(
                 index,
                 Error::NoResponse(index)
@@ -532,7 +538,7 @@ fn each_configuration_step_names_itself_when_the_card_goes_silent() {
         &[(8, 1, Fault::NoResponse)],
     );
     assert_eq!(
-        sd::identify(&mut h, 8),
+        sd::identify(&mut h, sd::BusWidth::Eight),
         Err(InitializationError::Configure(8, Error::NoResponse(8)))
     );
 }
@@ -542,7 +548,10 @@ fn each_configuration_step_names_itself_when_the_card_goes_silent() {
 /// transfer clock.
 #[test]
 fn a_transfer_clock_that_is_not_taken_names_the_clock() {
-    for (kind, width) in [(CardKind::SdHighCapacity, 4), (CardKind::MultimediaCard, 8)] {
+    for (kind, width) in [
+        (CardKind::SdHighCapacity, sd::BusWidth::Four),
+        (CardKind::MultimediaCard, sd::BusWidth::Eight),
+    ] {
         let mut simulator = SimulatedHostController::new(kind, 16_384, 32);
         simulator.clock_updates_taken = Some(2);
         let (mut h, _) = HostController::new(simulator, 50_000_000, None).unwrap();
@@ -563,7 +572,7 @@ fn an_error_bit_in_a_status_answer_stops_identification_at_that_command() {
     );
     let unknown_error = 1 << 19;
     assert!(matches!(
-        sd::identify(&mut h, 4),
+        sd::identify(&mut h, sd::BusWidth::Four),
         Err(InitializationError::Status(7, r)) if r & unknown_error != 0
     ));
     let mut h = faulty(
@@ -572,7 +581,7 @@ fn an_error_bit_in_a_status_answer_stops_identification_at_that_command() {
         &[(3, 0, Fault::ErrorStatus)],
     );
     assert!(matches!(
-        sd::identify(&mut h, 8),
+        sd::identify(&mut h, sd::BusWidth::Eight),
         Err(InitializationError::Status(3, _))
     ));
     let mut h = faulty(
@@ -581,7 +590,7 @@ fn an_error_bit_in_a_status_answer_stops_identification_at_that_command() {
         &[(16, 0, Fault::ErrorStatus)],
     );
     assert!(matches!(
-        sd::identify(&mut h, 4),
+        sd::identify(&mut h, sd::BusWidth::Four),
         Err(InitializationError::Status(16, _))
     ));
 }
@@ -594,7 +603,7 @@ fn a_card_specific_data_this_driver_cannot_size_is_refused_with_its_structure() 
         .unwrap()
         .0;
     assert_eq!(
-        sd::identify(&mut h, 4),
+        sd::identify(&mut h, sd::BusWidth::Four),
         Err(InitializationError::Capacity(3))
     );
 }
@@ -606,7 +615,7 @@ fn a_status_error_on_a_transfer_is_reported_not_swallowed() {
         8192,
         &[(17, 0, Fault::ErrorStatus)],
     );
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let mut one = [0u8; BLOCK_BYTES];
     assert!(matches!(
         sd::read_blocks(&mut h, &card, 0, &mut one),
@@ -619,7 +628,7 @@ fn a_status_error_on_a_transfer_is_reported_not_swallowed() {
         8192,
         &[(24, 0, Fault::ErrorStatus)],
     );
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     assert!(matches!(
         sd::write_blocks(&mut h, &card, 9, &one),
         Err(BlockTransferError::Status(_))
@@ -629,13 +638,13 @@ fn a_status_error_on_a_transfer_is_reported_not_swallowed() {
         8192,
         &[(13, 0, Fault::ErrorStatus)],
     );
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     assert!(matches!(
         sd::write_blocks(&mut h, &card, 9, &one),
         Err(BlockTransferError::Status(_))
     ));
     let mut h = host(CardKind::SdHighCapacity, 8192);
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     one[0] = 0x77;
     sd::write_blocks(&mut h, &card, 9, &one).unwrap();
     assert_eq!(h.registers_mut().storage[9][0], 0x77);
@@ -662,7 +671,7 @@ fn sequential_long_reads_walk_up_from_the_partition_and_stop_at_the_card_end() {
     let (blocks, reads_that_fit) = if cfg!(miri) { (1024, 3) } else { (2048, 7) };
     let (mut h, _) =
         HostController::new(master_boot_record_card(blocks, 16), 50_000_000, Some(32)).unwrap();
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     let mut buffer = vec![0u8; 256 * BLOCK_BYTES];
     let mut at = 16u64;
     while at + 256 <= card.blocks {
@@ -691,7 +700,7 @@ fn sequential_long_reads_walk_up_from_the_partition_and_stop_at_the_card_end() {
 #[test]
 fn an_sd_card_is_addressed_by_the_relative_card_address_it_chose_and_decoded_as_sd() {
     let mut h = host(CardKind::SdHighCapacity, 8192);
-    let card = sd::identify(&mut h, 4).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     assert_eq!(
         card.card_identification,
         card::CardIdentification {
@@ -708,7 +717,7 @@ fn an_sd_card_is_addressed_by_the_relative_card_address_it_chose_and_decoded_as_
     );
     assert!(simulator.commands.contains(&(41, 0x4030_0000)));
     let mut h = host(CardKind::SdVersion1, 4096);
-    sd::identify(&mut h, 4).unwrap();
+    sd::identify(&mut h, sd::BusWidth::Four).unwrap();
     assert!(h.into_registers().commands.contains(&(41, 0x0030_0000)));
 }
 
@@ -723,7 +732,7 @@ fn an_embedded_multimedia_card_is_sized_by_extended_card_specific_data_only_when
     let mut h = HostController::new(simulator, 50_000_000, Some(32))
         .unwrap()
         .0;
-    let card = sd::identify(&mut h, 8).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Eight).unwrap();
     assert!(!card.block_addressed);
     assert_eq!(card.blocks, 4096);
     let mut simulator = SimulatedHostController::new(CardKind::MultimediaCard, 4096, 32);
@@ -731,7 +740,7 @@ fn an_embedded_multimedia_card_is_sized_by_extended_card_specific_data_only_when
     let mut h = HostController::new(simulator, 50_000_000, Some(32))
         .unwrap()
         .0;
-    let card = sd::identify(&mut h, 8).unwrap();
+    let card = sd::identify(&mut h, sd::BusWidth::Eight).unwrap();
     assert!(card.block_addressed);
     assert_eq!(card.blocks, 99_999);
 }
@@ -756,7 +765,7 @@ fn an_embedded_multimedia_card_that_never_powers_up_is_given_up_on_whatever_the_
             .0;
         let busy_done = card::OPERATION_CONDITIONS_BUSY_DONE;
         let _ = sender.send(matches!(
-            sd::identify(&mut h, 8),
+            sd::identify(&mut h, sd::BusWidth::Eight),
             Err(InitializationError::PowerUp(conditions)) if conditions & busy_done == 0
         ));
     });
@@ -786,7 +795,7 @@ fn an_sd_card_that_never_powers_up_is_given_up_on_whatever_the_clock_steps() {
             .0;
         let busy_done = card::OPERATION_CONDITIONS_BUSY_DONE;
         let _ = sender.send(matches!(
-            sd::identify(&mut h, 8),
+            sd::identify(&mut h, sd::BusWidth::Eight),
             Err(InitializationError::PowerUp(conditions)) if conditions & busy_done == 0
         ));
     });

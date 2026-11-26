@@ -1170,7 +1170,7 @@ mod tests {
             32,
         ));
         h.registers_mut().write(registers::CONTROL_REGISTER, 1 << 8);
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().writes.clear();
         let mut block = [0u8; 512];
         sd::read_blocks(&mut h, &card, 1, &mut block).unwrap();
@@ -1213,7 +1213,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut()
             .write(registers::CONTROL_REGISTER, registers::CONTROL_QUEUE_RESET);
         h.registers_mut().writes.clear();
@@ -1259,7 +1259,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().stall_after = Some(128);
         let mut block = [0u8; 512];
         assert!(matches!(
@@ -1271,7 +1271,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().stall_after = Some(128);
         assert!(matches!(
             sd::write_blocks(&mut h, &card, 1, &block),
@@ -1292,7 +1292,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().stall_after = Some(128);
         h.registers_mut().end_early = true;
         let r = within_ten_seconds(move || {
@@ -1315,7 +1315,7 @@ mod tests {
             2048,
             48,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         let data: Vec<u8> = (0..512).map(|i| (i % 253) as u8).collect();
         sd::write_blocks(&mut h, &card, 5, &data).unwrap();
         h.registers_mut().overreport_fill = true;
@@ -1335,7 +1335,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().writes.clear();
         sd::write_blocks(&mut h, &card, 1, &[0xa5; 1024]).unwrap();
         // The FIFO's own writes are not recorded, so what follows the data command, up to the
@@ -1373,7 +1373,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().stall_after = Some(128);
         h.registers_mut().overreport_fill = true;
         let mut block = [0u8; 512];
@@ -1392,7 +1392,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().crc_error_at_end = true;
         let start = h.registers_mut().now_microseconds();
         assert!(matches!(
@@ -1410,7 +1410,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().fail_next_read_crc = true;
         let start = h.registers_mut().now_microseconds();
         let mut block = [0u8; 512];
@@ -1429,7 +1429,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().late_automatic_command_done = 5;
         let mut blocks = [0u8; 4 * 512];
         sd::read_blocks(&mut h, &card, 1, &mut blocks).unwrap();
@@ -1561,7 +1561,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().fail_next_read_timeout = true;
         let start = h.registers_mut().now_microseconds();
         let mut block = [0u8; 512];
@@ -1584,7 +1584,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().storage[9][0] = 0x5a;
         h.registers_mut().fail_next_read_crc = true;
         h.registers_mut().commands.clear();
@@ -1613,7 +1613,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().crc_error_at_end = true;
         h.registers_mut().commands.clear();
         let data = [0xa5u8; 2 * 512];
@@ -1636,7 +1636,7 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().commands.clear();
         let mut blocks = [0u8; 2 * 512];
         sd::read_blocks(&mut h, &card, 1, &mut blocks).unwrap();

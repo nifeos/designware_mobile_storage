@@ -578,7 +578,7 @@ mod tests {
         let memory = Memory::new(BASE, pages);
         simulator.memory = Some(memory.clone());
         let (mut h, _) = HostController::new(simulator, 50_000_000, Some(32)).unwrap();
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         (h, card, memory)
     }
 
@@ -627,9 +627,18 @@ mod tests {
         let (h, _, memory) = polled(4);
         let polled_text = std::format!("{h:?}");
         assert!(polled_text.starts_with("HostController {"), "{polled_text}");
-        assert!(polled_text.contains("queue_depth_words: 32"), "{polled_text}");
-        assert!(polled_text.contains("base_hertz: 50000000"), "{polled_text}");
-        assert!(polled_text.contains("direct_memory_access: None"), "{polled_text}");
+        assert!(
+            polled_text.contains("queue_depth_words: 32"),
+            "{polled_text}"
+        );
+        assert!(
+            polled_text.contains("base_hertz: 50000000"),
+            "{polled_text}"
+        );
+        assert!(
+            polled_text.contains("direct_memory_access: None"),
+            "{polled_text}"
+        );
         assert!(polled_text.ends_with(", .. }"), "{polled_text}");
         let h = with_internal_direct_memory_access(h, &memory);
         let engine_text = std::format!("{h:?}");

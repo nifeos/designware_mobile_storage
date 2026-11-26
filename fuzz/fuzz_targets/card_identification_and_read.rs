@@ -65,7 +65,8 @@ fuzz_target!(|data: &[u8]| {
     let Some((header, rest)) = data.split_at_checked(HEADER_BYTES) else {
         return;
     };
-    let maximum_bus_width = [1u8, 4, 8, header[0]][usize::from(header[1] & 3)];
+    let maximum_bus_width =
+        [sd::BusWidth::One, sd::BusWidth::Four, sd::BusWidth::Eight][usize::from(header[1] % 3)];
     let blocks_to_read = 1 + usize::from(header[2]) % MAXIMUM_BLOCKS_PER_READ;
     let wrap_into_card = header[3] & 1 != 0;
     let mut address_bytes = [0u8; 8];
@@ -84,7 +85,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(card) = sd::identify(&mut host, maximum_bus_width) else {
         return;
     };
-    assert!(card.bus_width <= maximum_bus_width.max(1));
+    assert!(card.bus_width <= maximum_bus_width);
 
     let logical_block_address = if wrap_into_card {
         address % card.blocks.max(1)

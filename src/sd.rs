@@ -50,6 +50,59 @@ pub enum CardKind {
     MultimediaCard,
 }
 
+/// **The width of the data bus**, in data lines.
+///
+/// A slot's widest bus, as its device tree's `bus-width` gives it, is what [`identify`] takes, and
+/// the width a card was brought up at is what [`Card`] reports. Today the driver sets one or four
+/// lines: an SD card goes to four when the slot allows four or eight, and an eMMC stays at one.
+/// [`BusWidth::Eight`] is accepted as a slot's widest bus so a caller can pass the tree's value
+/// as it is, and a later release may set it. A later release may add widths, so a `match` on it
+/// needs a wildcard arm.
+///
+/// ```
+/// use designware_mobile_storage::sd::BusWidth;
+///
+/// // A device tree's `bus-width` property, as a number.
+/// let slot = BusWidth::from_lines(8).unwrap();
+/// assert_eq!(slot, BusWidth::Eight);
+/// assert_eq!(slot.lines(), 8);
+/// assert!(BusWidth::Four < slot);
+/// assert_eq!(BusWidth::from_lines(2), None);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum BusWidth {
+    /// One data line, `DAT0`: every card's width at identification.
+    One,
+    /// Four data lines, `DAT0` to `DAT3`.
+    Four,
+    /// Eight data lines, an eMMC's widest. Accepted as a slot's widest bus; not set today.
+    Eight,
+}
+
+impl BusWidth {
+    /// How many data lines.
+    #[must_use]
+    pub const fn lines(self) -> u8 {
+        match self {
+            BusWidth::One => 1,
+            BusWidth::Four => 4,
+            BusWidth::Eight => 8,
+        }
+    }
+
+    /// The width of `lines` data lines, or `None` for a count no card bus has.
+    #[must_use]
+    pub const fn from_lines(lines: u8) -> Option<BusWidth> {
+        match lines {
+            1 => Some(BusWidth::One),
+            4 => Some(BusWidth::Four),
+            8 => Some(BusWidth::Eight),
+            _ => None,
+        }
+    }
+}
+
 /// Which step of identification failed, and how.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -125,7 +178,7 @@ pub struct Card {
     /// Addressed in blocks (true) or bytes (false).
     pub block_addressed: bool,
     /// The bus width in use.
-    pub bus_width: u8,
+    pub bus_width: BusWidth,
     /// The card clock in use, in hertz.
     pub clock_hertz: u32,
 }
@@ -167,15 +220,17 @@ fn r1_ok(index: u8, r1: u32) -> Result<(), InitializationError> {
 }
 
 /// **Bring up whatever card is in the slot** and leave it selected, in the transfer state, at
-/// default speed, 25 megahertz. `maximum_bus_width` is the tree's `bus-width` for the slot (4 on the `VisionFive` 2's SD
-/// slot, 8 on its eMMC slot).
+/// default speed, 25 megahertz. `maximum_bus_width` is the slot's widest bus, the tree's
+/// `bus-width` for it ([`BusWidth::Four`] on the `VisionFive` 2's SD slot, [`BusWidth::Eight`] on
+/// its eMMC slot). An SD card goes to four lines when the slot allows four or more, and an eMMC
+/// stays at one; see [`BusWidth`].
 ///
 /// # Errors
 ///
 /// The step that failed; see [`InitializationError`].
 pub fn identify<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
     host: &mut HostController<R, D>,
-    maximum_bus_width: u8,
+    maximum_bus_width: BusWidth,
 ) -> Result<Card, InitializationError> {
     let is_version_2_or_later = go_idle_and_check_interface(host)?;
     let (kind, operation_conditions) = power_up(host, is_version_2_or_later)?;
@@ -201,7 +256,7 @@ pub fn identify<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
             }
             _ => false,
         },
-        bus_width: 1,
+        bus_width: BusWidth::One,
         clock_hertz: 0,
     };
 
@@ -383,21 +438,21 @@ pub(crate) fn configure_sd<R: RegisterWindowAndClock, D: DirectMemoryAccessRegio
     host: &mut HostController<R, D>,
     card: &mut Card,
     card_specific_data_raw: &[u32; 4],
-    maximum_bus_width: u8,
+    maximum_bus_width: BusWidth,
 ) -> Result<(), InitializationError> {
     let card_specific_data = CardSpecificData::from_sd_register(card_specific_data_raw);
     if card_specific_data.blocks == 0 {
         return Err(InitializationError::Capacity(card_specific_data.structure));
     }
     card.blocks = card_specific_data.blocks;
-    if maximum_bus_width >= 4 {
+    if maximum_bus_width >= BusWidth::Four {
         application_command(host, card)?;
         let r1 = host
             .send_command(&Command::new(command::SET_BUS_WIDTH, 2, Response::R1))
             .map_err(|e| InitializationError::Configure(command::SET_BUS_WIDTH, e))?;
         r1_ok(command::SET_BUS_WIDTH, r1[0])?;
         host.set_bus_width(4);
-        card.bus_width = 4;
+        card.bus_width = BusWidth::Four;
     }
     let r1 = host
         .send_command(&Command::new(
@@ -649,7 +704,7 @@ mod tests {
             card_identification: CardIdentification::from_sd_register(&[0; 4]),
             blocks,
             block_addressed,
-            bus_width: 4,
+            bus_width: BusWidth::Four,
             clock_hertz: TRANSFER_HERTZ,
         }
     }
