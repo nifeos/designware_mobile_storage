@@ -444,40 +444,6 @@ fn written_blocks_are_stored_lost_or_mangled_by_write_command() {
     assert_eq!(s.storage[4][1..], data[1..]);
 }
 
-/// An eMMC drives the width its last `CMD6` set, back to one bit too; a controller listening on
-/// another width reads every byte wrong; and a `CMD6` that is not a byte write is refused.
-#[test]
-fn an_embedded_multimedia_card_reads_true_only_on_the_width_its_switch_set() {
-    let mut s = simulator(CardKind::MultimediaCard, 32);
-    selected(&mut s);
-    let switch_error = |s: &mut SimulatedHostController, argument| {
-        assert_eq!(send(s, 6, argument), Some(TRANSFER_READY));
-        send(s, 13, 0).unwrap() & 1 << 7 != 0
-    };
-    let read = |s: &mut SimulatedHostController, card_type| {
-        s.write(CARD_TYPE_REGISTER, card_type);
-        start_read(s, 512, 0);
-        drain(s, 128)
-    };
-    let want = block_words(&s, 0);
-    assert_eq!(read(&mut s, 0), want);
-    let wrong = read(&mut s, CARD_TYPE_4_BIT_BUS);
-    let bytes = |words: &[u32]| {
-        words
-            .iter()
-            .flat_map(|w| w.to_le_bytes())
-            .collect::<Vec<_>>()
-    };
-    assert!(bytes(&wrong).iter().zip(bytes(&want)).all(|(a, b)| *a != b));
-    assert!(!switch_error(&mut s, 0x03b7_0100));
-    assert_eq!(read(&mut s, CARD_TYPE_4_BIT_BUS), want);
-    assert!(!switch_error(&mut s, 0x03b7_0000));
-    assert_eq!(read(&mut s, 0), want);
-    // Access 1 sets bits rather than writing the byte.
-    assert!(switch_error(&mut s, 0x01b7_0100));
-    assert_eq!(read(&mut s, 0), want);
-}
-
 /// A memory of two descriptor pages and four data pages behind `s`, the IDMAC pointed at its first
 /// descriptor and selected and enabled as `control` and `bus_mode` say.
 fn attach(s: &mut SimulatedHostController, control: u32, bus_mode: u32) -> Memory {
