@@ -6,6 +6,7 @@ rust-version = "1.88"
 description = "Synopsys DesignWare Mobile Storage Host (dw-mshc) SD and eMMC driver logic behind one small trait, proven with Kani"
 license = "(MIT OR Apache-2.0) AND ISC"
 repository = "https://github.com/partsfoundry/designware_mobile_storage"
+documentation = "https://docs.rs/designware_mobile_storage"
 readme = "README.md"
 keywords = ["no-std", "kani", "driver", "sd-card", "emmc"]
 categories = ["no-std", "embedded", "hardware-support"]
