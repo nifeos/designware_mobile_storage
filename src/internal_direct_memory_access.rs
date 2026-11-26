@@ -753,6 +753,16 @@ mod tests {
 
     /// One more block than the region holds is refused before anything is sent, rather than
     /// written past the region's end; exactly what it holds is moved.
+    /// **A chain always has a descriptor**, even for a transfer of no bytes, so it always has a
+    /// last one to carry `LD`; past that, one descriptor a page.
+    #[test]
+    fn a_transfer_of_no_bytes_still_takes_one_descriptor() {
+        assert_eq!(descriptors_for(0), 1);
+        assert_eq!(descriptors_for(1), 1);
+        assert_eq!(descriptors_for(PAGE_BYTES), 1);
+        assert_eq!(descriptors_for(PAGE_BYTES + 1), 2);
+    }
+
     #[test]
     fn a_transfer_larger_than_the_region_is_refused_unsent() {
         let (h, card, memory) = polled(3);

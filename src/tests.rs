@@ -799,3 +799,172 @@ fn the_error_enums_display_and_implement_the_error_trait() {
         "the transfer failed: the controller did not take a clock update"
     );
 }
+
+/// **A call that does not match its command's data phase is refused before anything is sent**:
+/// `send_command` with a data phase, and `read_data` or `write_data` without one.
+#[test]
+fn a_call_that_does_not_match_the_commands_data_phase_is_refused_unsent() {
+    use crate::command::{self, Command, Data, Response};
+    let mut h = host(CardKind::SdHighCapacity, 8192);
+    let with_data = Command::with_data(
+        command::READ_SINGLE_BLOCK,
+        0,
+        Response::R1,
+        Data {
+            block_bytes: BLOCK_BYTES as u32,
+            blocks: 1,
+            is_write: false,
+        },
+    );
+    let without_data = Command::new(command::SEND_STATUS, 0, Response::R1);
+    let mut buffer = [0u8; BLOCK_BYTES];
+    assert_eq!(h.send_command(&with_data), Err(Error::BufferSize));
+    assert_eq!(
+        h.read_data(&without_data, &mut buffer),
+        Err(Error::BufferSize)
+    );
+    assert_eq!(h.write_data(&without_data, &buffer), Err(Error::BufferSize));
+    assert!(h.registers_mut().commands.is_empty());
+}
+
+/// **Every error variant prints its own sentence**, with its fields where it has them, so a board
+/// transcript that stops on one says which and where.
+#[test]
+fn every_error_variant_displays_its_sentence() {
+    use crate::internal_direct_memory_access::Refusal;
+    fn text(e: impl core::fmt::Display) -> std::string::String {
+        std::format!("{e}")
+    }
+    let host_errors = [
+        (Error::QueueWidth(2), "unsupported FIFO width field 2"),
+        (
+            Error::ResetStuck(0x7),
+            "a reset bit did not clear (read 0x7)",
+        ),
+        (
+            Error::ClockUpdate,
+            "the controller did not take a clock update",
+        ),
+        (Error::CommandNotTaken(17), "command 17 was not taken"),
+        (
+            Error::CommandTimeout(17, 0x100),
+            "command 17 timed out (status 0x100)",
+        ),
+        (Error::NoResponse(55), "no card answered command 55"),
+        (
+            Error::BadResponse(2, 0x40),
+            "command 2 got a bad response (status 0x40)",
+        ),
+        (
+            Error::Data(18, 0x80),
+            "the data phase of command 18 failed (status 0x80)",
+        ),
+        (
+            Error::DataTimeout(18, 0x200, 512),
+            "the data phase of command 18 timed out (status 0x200, 512 bytes owed)",
+        ),
+        (
+            Error::BufferSize,
+            "the buffer does not match the command's data phase",
+        ),
+        (Error::Busy, "the card stayed busy past the deadline"),
+        (
+            Error::DirectMemoryAccess(25, 0x4),
+            "the internal DMA controller stopped during command 25 (status 0x4)",
+        ),
+    ];
+    for (error, sentence) in host_errors {
+        assert_eq!(text(error), sentence);
+    }
+    let refusals = [
+        (
+            Refusal::NoInternalDirectMemoryAccess(1),
+            "the controller has no internal DMA controller (field 1)",
+        ),
+        (
+            Refusal::Addressing64,
+            "64-bit descriptors are not supported",
+        ),
+        (
+            Refusal::Alignment(0x1001),
+            "the region at 0x1001 does not start on a page",
+        ),
+        (
+            Refusal::Size(4096),
+            "a region of 4096 bytes is not a descriptor page and data pages",
+        ),
+        (
+            Refusal::AboveFourGibibytes(0x1_0000_0000),
+            "the region at 0x100000000 reaches above 4 GiB",
+        ),
+    ];
+    for (refusal, sentence) in refusals {
+        assert_eq!(text(refusal), sentence);
+    }
+    let initialization_errors = [
+        (
+            InitializationError::Controller(Error::ResetStuck(1)),
+            "the controller would not start: a reset bit did not clear (read 0x1)",
+        ),
+        (
+            InitializationError::GoIdle(Error::NoResponse(0)),
+            "CMD0 failed: no card answered command 0",
+        ),
+        (
+            InitializationError::InterfaceCondition(0x1a5),
+            "CMD8 echoed 0x1a5",
+        ),
+        (
+            InitializationError::NoCard(Error::NoResponse(41)),
+            "no memory card answered: no card answered command 41",
+        ),
+        (
+            InitializationError::PowerUp(0xff8000),
+            "the card stayed busy at power up (OCR 0xff8000)",
+        ),
+        (
+            InitializationError::Identify(2, Error::NoResponse(2)),
+            "CMD2 failed during identification: no card answered command 2",
+        ),
+        (
+            InitializationError::Capacity(3),
+            "the card specific data gives no capacity (structure 3)",
+        ),
+        (
+            InitializationError::Configure(16, Error::NoResponse(16)),
+            "CMD16 failed during configuration: no card answered command 16",
+        ),
+        (
+            InitializationError::Status(7, 0x80000),
+            "CMD7 reported a card error (status 0x80000)",
+        ),
+        (
+            InitializationError::TransferClock(Error::ClockUpdate),
+            "the transfer clock would not start: the controller did not take a clock update",
+        ),
+    ];
+    for (error, sentence) in initialization_errors {
+        assert_eq!(text(error), sentence);
+    }
+    let block_transfer_errors = [
+        (
+            BlockTransferError::Length,
+            "the buffer is empty or not a whole number of blocks",
+        ),
+        (
+            BlockTransferError::Range,
+            "the block range runs past what the card can address",
+        ),
+        (
+            BlockTransferError::Host(Error::Busy),
+            "the transfer failed: the card stayed busy past the deadline",
+        ),
+        (
+            BlockTransferError::Status(0x400000),
+            "the card reported an error (status 0x400000)",
+        ),
+    ];
+    for (error, sentence) in block_transfer_errors {
+        assert_eq!(text(error), sentence);
+    }
+}
