@@ -311,6 +311,25 @@ fn a_sixteen_bit_queue_is_refused_at_the_door() {
         HostController::new(narrow, 50_000_000, None),
         Err(Error::QueueWidth(0))
     ));
+
+    // The same refusal through the constructor that hands the window back, untouched: no command
+    // went out, and the window brings a card up once it is used as it is.
+    let narrow = Narrow(SimulatedHostController::new(
+        CardKind::SdHighCapacity,
+        1024,
+        32,
+    ));
+    let Err((error, Narrow(window))) =
+        HostController::new_returning_window(narrow, 50_000_000, None)
+    else {
+        panic!("a 16-bit queue was taken");
+    };
+    assert_eq!(error, Error::QueueWidth(0));
+    assert!(window.commands.is_empty());
+    let (mut h, _) = HostController::new_returning_window(window, 50_000_000, None)
+        .map_err(|(error, _)| error)
+        .unwrap();
+    assert_eq!(sd::identify(&mut h, 4).unwrap().blocks, 1024);
 }
 
 #[test]

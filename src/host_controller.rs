@@ -289,12 +289,30 @@ impl<R: RegisterWindowAndClock> HostController<R> {
     ///
     /// # Errors
     ///
-    /// [`Error::QueueWidth`] for a 16- or 64-bit FIFO.
+    /// [`Error::QueueWidth`] for a 16- or 64-bit FIFO. The window is dropped with the refusal;
+    /// [`HostController::new_returning_window`] hands it back.
     pub fn new(
-        mut registers: R,
+        registers: R,
         base_hertz: u32,
         queue_depth_words: Option<u32>,
     ) -> Result<(Self, Identity), Error> {
+        Self::new_returning_window(registers, base_hertz, queue_depth_words)
+            .map_err(|(error, _)| error)
+    }
+
+    /// **Take a controller, or give the window back**: [`HostController::new`], for a caller whose
+    /// window was costly to make, or who tries another configuration on a refusal. Everything
+    /// `new` does, it does.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::QueueWidth`] for a 16- or 64-bit FIFO, with `registers` as it was passed in. Only
+    /// the identity registers were read, which changes nothing in the controller.
+    pub fn new_returning_window(
+        mut registers: R,
+        base_hertz: u32,
+        queue_depth_words: Option<u32>,
+    ) -> Result<(Self, Identity), (Error, R)> {
         let id = Identity {
             version_identification: registers.read(registers::VERSION_IDENTIFICATION_REGISTER),
             hardware_configuration: registers.read(registers::HARDWARE_CONFIGURATION_REGISTER),
@@ -308,7 +326,10 @@ impl<R: RegisterWindowAndClock> HostController<R> {
             card_type: registers.read(registers::CARD_TYPE_REGISTER),
         };
         if registers::queue_width_bytes(id.hardware_configuration) != Some(4) {
-            return Err(Error::QueueWidth((id.hardware_configuration >> 7) & 7));
+            return Err((
+                Error::QueueWidth((id.hardware_configuration >> 7) & 7),
+                registers,
+            ));
         }
         let depth = match queue_depth_words {
             Some(d) if d > 0 => d,
