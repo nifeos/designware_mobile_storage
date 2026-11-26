@@ -8,6 +8,34 @@
 //! [`HostController::with_internal_direct_memory_access`], hands each data phase to the controller's DMA
 //! engine ([`crate::internal_direct_memory_access`]). Commands and identification are the same on
 //! both.
+//!
+//! # Example
+//!
+//! Take the controller, see what it is, and check the slot. The example runs against the crate's
+//! simulator, which the `simulator` feature turns on; on a board the register window is the
+//! controller's own.
+//!
+//! ```
+//! # #[cfg(not(feature = "simulator"))] fn main() {}
+//! # #[cfg(feature = "simulator")] fn main() {
+//! use designware_mobile_storage::SimulatedHostController;
+//! use designware_mobile_storage::host_controller::{Deadlines, HostController};
+//! use designware_mobile_storage::sd::CardKind;
+//!
+//! let registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+//! // A 50 megahertz base clock, and the FIFO depth read from the controller.
+//! let (mut host, identity) = HostController::new(registers, 50_000_000, None).unwrap();
+//! assert_eq!(identity.card_detect() & 1, 0, "bit 0 clear: a card is present");
+//! assert!(host.is_card_present());
+//! // A slow card may take longer to answer than the defaults allow.
+//! let mut deadlines = Deadlines::default();
+//! deadlines.busy_microseconds = 2_000_000;
+//! host.set_deadlines(deadlines);
+//! host.reset().unwrap();
+//! let card_hertz = host.set_clock(400_000).unwrap();
+//! assert!(card_hertz <= 400_000);
+//! # }
+//! ```
 
 use crate::command::{Command, Response, STOP_TRANSMISSION, UPDATE_CLOCK};
 use crate::internal_direct_memory_access::{

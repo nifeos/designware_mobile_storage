@@ -13,6 +13,38 @@
 //! is public, so a caller composes the commands this driver does not send itself with
 //! [`Command::new`] or [`Command::with_data`] and sends them through
 //! [`crate::host_controller::HostController`].
+//!
+//! # Example
+//!
+//! Compose a single-block read the way [`read_blocks`](crate::sd::read_blocks) does, and send it
+//! through the controller. The example runs against the crate's simulator, which the `simulator`
+//! feature turns on; on a board the register window is the controller's own.
+//!
+//! ```
+//! # #[cfg(not(feature = "simulator"))] fn main() {}
+//! # #[cfg(feature = "simulator")] fn main() {
+//! use designware_mobile_storage::SimulatedHostController;
+//! use designware_mobile_storage::command::{Command, Data, READ_SINGLE_BLOCK, Response};
+//! use designware_mobile_storage::host_controller::HostController;
+//! use designware_mobile_storage::sd::{self, BLOCK_BYTES, BusWidth, CardKind};
+//!
+//! let mut registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+//! registers.card_blocks_mut()[9] = [0xa5; BLOCK_BYTES];
+//! let (mut host, _identity) = HostController::new(registers, 50_000_000, None).unwrap();
+//! let card = sd::identify(&mut host, BusWidth::Four).unwrap();
+//!
+//! let argument = card.block_address_argument(9).unwrap();
+//! let read = Command::with_data(
+//!     READ_SINGLE_BLOCK,
+//!     argument,
+//!     Response::R1,
+//!     Data::new(BLOCK_BYTES as u32, 1, false),
+//! );
+//! let mut block = [0; BLOCK_BYTES];
+//! host.read_data(&read, &mut block).unwrap();
+//! assert_eq!(block, [0xa5; BLOCK_BYTES]);
+//! # }
+//! ```
 
 use crate::registers;
 

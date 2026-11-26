@@ -7,6 +7,43 @@
 //! Linux's `dw_mci_idmac_start_dma` use it: reset the IDMAC, point `DBADDR` at the chain, select it
 //! in `CONTROL_REGISTER`, enable it in `BUS_MODE_REGISTER`, send the command. Polled completion: `RINTSTS` for the card, the
 //! last descriptor's `OWN` for memory, since a read's `DTO` can beat its last words to memory.
+//!
+//! # Example
+//!
+//! Hand the controller a region of memory, build the engine on it, and move blocks through it.
+//! The calls to [`identify`](crate::sd::identify), [`read_blocks`](crate::sd::read_blocks) and
+//! [`write_blocks`](crate::sd::write_blocks) are the same as without the engine. The example runs
+//! against the crate's simulator, which the `simulator` feature turns on and whose
+//! `attach_direct_memory_access_region` stands in for memory the controller reaches; on a board
+//! the region is the caller's own [`DirectMemoryAccessRegion`].
+//!
+//! ```
+//! # #[cfg(not(feature = "simulator"))] fn main() {}
+//! # #[cfg(feature = "simulator")] fn main() {
+//! use designware_mobile_storage::SimulatedHostController;
+//! use designware_mobile_storage::host_controller::HostController;
+//! use designware_mobile_storage::internal_direct_memory_access::{
+//!     InternalDirectMemoryAccess, PAGE_BYTES,
+//! };
+//! use designware_mobile_storage::sd::{self, BLOCK_BYTES, BusWidth, CardKind};
+//!
+//! let mut registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+//! // Five pages at bus address 0x8000_0000: the descriptor page and four data pages.
+//! let region = registers.attach_direct_memory_access_region(0x8000_0000, 5);
+//! let (host, identity) = HostController::new(registers, 50_000_000, None).unwrap();
+//! let engine = InternalDirectMemoryAccess::new(region, &identity).unwrap();
+//! let mut host = host.with_internal_direct_memory_access(engine);
+//!
+//! let card = sd::identify(&mut host, BusWidth::Four).unwrap();
+//! // Four data pages hold sixteen blocks, the most one transfer moves through this region.
+//! let blocks_per_transfer = 4 * PAGE_BYTES as usize / BLOCK_BYTES;
+//! let written = vec![[0x5a; BLOCK_BYTES]; blocks_per_transfer];
+//! sd::write_blocks(&mut host, &card, 64, &written).unwrap();
+//! let mut read = vec![[0; BLOCK_BYTES]; blocks_per_transfer];
+//! sd::read_blocks(&mut host, &card, 64, &mut read).unwrap();
+//! assert_eq!(read, written);
+//! # }
+//! ```
 
 use crate::command::Command;
 #[cfg(test)]

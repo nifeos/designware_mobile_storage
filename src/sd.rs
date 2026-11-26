@@ -9,6 +9,39 @@
 //! tells it from an SD 1.x card and brings it up with `CMD1`. The clock then goes from 400 kHz to
 //! 25 megahertz, default speed; high speed and UHS are not attempted, and an eMMC's bus stays 1-bit.
 //! Every step's failure names the step, so a board transcript that stops says where.
+//!
+//! # Example
+//!
+//! Bring a card up on a slot with a 4-bit bus, then write two blocks and read them back.
+//! The example runs against the crate's simulator, which the `simulator` feature turns on; on a
+//! board the register window is the controller's own.
+//!
+//! ```
+//! # #[cfg(not(feature = "simulator"))] fn main() {}
+//! # #[cfg(feature = "simulator")] fn main() {
+//! use designware_mobile_storage::SimulatedHostController;
+//! use designware_mobile_storage::host_controller::HostController;
+//! use designware_mobile_storage::sd::{self, BLOCK_BYTES, BusWidth, CardKind};
+//!
+//! let registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+//! let (mut host, _identity) = HostController::new(registers, 50_000_000, None).unwrap();
+//! let card = sd::identify(&mut host, BusWidth::Four).unwrap();
+//! assert_eq!(card.kind(), CardKind::SdHighCapacity);
+//! assert_eq!(card.blocks(), 8192);
+//! assert_eq!(card.bus_width(), BusWidth::Four);
+//!
+//! let written = [[0x11; BLOCK_BYTES], [0x22; BLOCK_BYTES]];
+//! sd::write_blocks(&mut host, &card, 100, &written).unwrap();
+//! let mut read = [[0; BLOCK_BYTES]; 2];
+//! sd::read_blocks(&mut host, &card, 100, &mut read).unwrap();
+//! assert_eq!(read, written);
+//! // A range past the card's end is refused before anything is sent.
+//! assert_eq!(
+//!     sd::read_blocks(&mut host, &card, 8191, &mut read),
+//!     Err(sd::BlockTransferError::Range)
+//! );
+//! # }
+//! ```
 
 use crate::card::{
     self, CardIdentification, CardSpecificData, INTERFACE_CONDITION_ARGUMENT,
