@@ -191,7 +191,7 @@ The proofs need Kani, which `rustup` does not install. Run `cargo install --lock
 --version 0.68.0`, then `cargo kani setup`. The setup step downloads a model checker, so it needs
 network access. CI uses version 0.68.0, and another version may verify differently.
 
-Then `cargo kani`, from the crate's directory, runs all twenty-four harnesses one at a time. That
+Then `cargo kani`, from the crate's directory, runs all twenty-two harnesses one at a time. That
 took 29 minutes on an `x86_64` Linux machine with 80 threads. The slowest harness took about 240
 seconds and the next two about 210 each. The heaviest peaks near 3.5 gigabytes of resident memory
 (6 gigabytes counting the file cache of the whole run). CI runs
@@ -218,7 +218,7 @@ A passing run prints several things that look alarming. All of them are expected
 - Source paths under `/home/runner/.rustup`, a directory that does not exist on your machine. They
   come from the toolchain Kani ships.
 
-Trust the last line of the run: `Complete - 24 successfully verified harnesses, 0 failures, 24 total.`
+Trust the last line of the run: `Complete - 22 successfully verified harnesses, 0 failures, 22 total.`
 
 ### Running one falsification patch
 
