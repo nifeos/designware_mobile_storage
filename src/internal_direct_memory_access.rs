@@ -320,42 +320,55 @@ pub(crate) const fn descriptor(
 }
 
 impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D> {
-    /// **Run `command`'s data phase through the IDMAC**, the data already in the region for a
+    /// **Lend the IDMAC to `f`**, with the rest of the controller: `None` on the polled host,
+    /// which has none. The engine is out of `self` while `f` runs and back in it after, so `f`
+    /// reaches the registers and the engine at once and no step inside it asks again whether
+    /// there is one.
+    pub(crate) fn with_engine<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self, &mut InternalDirectMemoryAccess<D>) -> T,
+    ) -> Option<T> {
+        let mut engine = self.direct_memory_access.take()?;
+        let result = f(self, &mut engine);
+        self.direct_memory_access = Some(engine);
+        Some(result)
+    }
+
+    /// **Run `command`'s data phase through `engine`**, the data already in the region for a
     /// write. Stops and resets the IDMAC before returning, whatever happened.
     pub(crate) fn internal_direct_memory_access_transfer(
         &mut self,
+        engine: &mut InternalDirectMemoryAccess<D>,
         command: &Command,
         bytes: u32,
     ) -> Result<[u32; 4], Error> {
         let count = descriptors_for(bytes);
-        if let Some(direct_memory_access) = self.direct_memory_access.as_mut() {
-            direct_memory_access.write_chain(bytes);
-            direct_memory_access.region.barrier();
-        }
-        let result = self.issue(command, true).and_then(|response| {
-            self.internal_direct_memory_access_wait(command, count)
-                .map(|()| response)
-        });
+        engine.write_chain(bytes);
+        engine.region.barrier();
+        let result = self
+            .issue(
+                command,
+                Some(engine.region_direct_memory_access_bus_address),
+            )
+            .and_then(|response| {
+                self.internal_direct_memory_access_wait(engine, command, count)
+                    .map(|()| response)
+            });
         let stopped = self.internal_direct_memory_access_stop();
         let response = result?;
         stopped?;
-        if let Some(direct_memory_access) = self.direct_memory_access.as_mut() {
-            direct_memory_access.region.barrier();
-        }
+        engine.region.barrier();
         Ok(response)
     }
 
-    /// **Arm the IDMAC** on the chain at the region's start: called by `issue` once the FIFO
-    /// reset has cleared and before the command is written, so the engine is ready for the first
-    /// word. `IDINTEN` stays zero and `CONTROL_REGISTER`'s interrupt enable clear; `IDSTS` is raw.
-    pub(crate) fn internal_direct_memory_access_start(&mut self) -> Result<(), Error> {
-        let Some(region_direct_memory_access_bus_address) = self
-            .direct_memory_access
-            .as_ref()
-            .map(|d| d.region_direct_memory_access_bus_address)
-        else {
-            return Ok(());
-        };
+    /// **Arm the IDMAC** on the chain at `region_direct_memory_access_bus_address`, the region's
+    /// start: called by `issue` once the FIFO reset has cleared and before the command is written,
+    /// so the engine is ready for the first word. `IDINTEN` stays zero and `CONTROL_REGISTER`'s
+    /// interrupt enable clear; `IDSTS` is raw.
+    pub(crate) fn internal_direct_memory_access_start(
+        &mut self,
+        region_direct_memory_access_bus_address: u32,
+    ) -> Result<(), Error> {
         self.registers.write(
             registers::BUS_MODE_REGISTER,
             registers::BUS_MODE_SOFTWARE_RESET,
@@ -406,6 +419,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
     /// reopens a descriptor or rewrites its size cannot hold the wait open.
     pub(crate) fn internal_direct_memory_access_wait(
         &mut self,
+        engine: &InternalDirectMemoryAccess<D>,
         command: &Command,
         count: u32,
     ) -> Result<(), Error> {
@@ -416,10 +430,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             }
             _ => registers::RAW_INTERRUPT_DATA_TRANSFER_OVER,
         };
-        let Some(direct_memory_access) = self.direct_memory_access.as_ref() else {
-            return Err(Error::BufferSize);
-        };
-        let mut owned = direct_memory_access.owned(count);
+        let mut owned = engine.owned(count);
         let mut start = self.registers.now_microseconds();
         loop {
             let raw_interrupt_status = self
@@ -429,7 +440,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
                 return Err(Error::Data(command.index, raw_interrupt_status));
             }
             if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_TIMEOUT_MASK != 0 {
-                let owed = direct_memory_access.owed(count);
+                let owed = engine.owed(count);
                 return Err(Error::DataTimeout(
                     command.index,
                     raw_interrupt_status,
@@ -448,10 +459,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
                     internal_direct_memory_access_status,
                 ));
             }
-            let Some(direct_memory_access) = self.direct_memory_access.as_ref() else {
-                return Err(Error::BufferSize);
-            };
-            let now_owned = direct_memory_access.owned(count);
+            let now_owned = engine.owned(count);
             if raw_interrupt_status & want == want && now_owned == 0 {
                 return Ok(());
             }
@@ -460,7 +468,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
                 owned = now_owned;
                 start = now;
             } else if now.wrapping_sub(start) > self.deadlines.data_microseconds {
-                let owed = direct_memory_access.owed(count);
+                let owed = engine.owed(count);
                 return Err(Error::DataTimeout(
                     command.index,
                     raw_interrupt_status,

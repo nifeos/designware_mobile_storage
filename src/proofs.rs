@@ -349,7 +349,11 @@ fn the_direct_memory_access_wait_returns_once_its_deadline_has_passed() {
             is_write: kani::any(),
         },
     );
-    let result = host.internal_direct_memory_access_wait(&command, count);
+    let Some(result) = host.with_engine(|host, engine| {
+        host.internal_direct_memory_access_wait(engine, &command, count)
+    }) else {
+        unreachable!()
+    };
     assert!(host.registers_mut().taken <= past_from + count as usize + 1);
     kani::cover!(matches!(
         result,
