@@ -979,16 +979,16 @@ mod tests {
     #[test]
     fn an_identity_reads_back_each_register_it_holds() {
         let identity = Identity {
-            version_identification: 1,
-            hardware_configuration: 2,
-            user_identification: 3,
-            queue_threshold: 4,
-            card_detect: 5,
-            host_control: 6,
-            power_enable: 7,
-            clock_divider: 8,
-            clock_enable: 9,
-            card_type: 10,
+            version_identification: 0x5342_270a,
+            hardware_configuration: 0x0c4c_4c81,
+            user_identification: 0x0700_0003,
+            queue_threshold: 0x0020_0010,
+            card_detect: 0x0000_0002,
+            host_control: 0x0200_0010,
+            power_enable: 0x0000_0003,
+            clock_divider: 0x0000_003f,
+            clock_enable: 0x0001_0001,
+            card_type: 0x0001_0000,
         };
         let read = [
             identity.version_identification(),
@@ -1002,7 +1002,21 @@ mod tests {
             identity.clock_enable(),
             identity.card_type(),
         ];
-        assert_eq!(read, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        assert_eq!(
+            read,
+            [
+                0x5342_270a,
+                0x0c4c_4c81,
+                0x0700_0003,
+                0x0020_0010,
+                0x0000_0002,
+                0x0200_0010,
+                0x0000_0003,
+                0x0000_003f,
+                0x0001_0001,
+                0x0001_0000,
+            ]
+        );
     }
 
     /// The `VisionFive` 2's controllers run from 50 megahertz (`assigned-clock-rates` in mainline

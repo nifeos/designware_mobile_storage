@@ -342,6 +342,40 @@ fn a_sixteen_bit_queue_is_refused_at_the_door() {
     );
 }
 
+/// The refusal names the width field read from `HCON` bits 9 to 7, so a 64-bit queue reports
+/// field 2, whatever the other bits of the word hold.
+#[test]
+fn a_sixty_four_bit_queue_is_refused_with_its_width_field() {
+    struct Wide(SimulatedHostController);
+    impl crate::host_controller::RegisterWindowAndClock for Wide {
+        fn read(&mut self, o: u32) -> u32 {
+            if o == crate::registers::HARDWARE_CONFIGURATION_REGISTER {
+                // Field 2 (a 64-bit queue) at bits 9 to 7, with bits set on both sides of it.
+                0xffff_fc7f | (2 << 7)
+            } else {
+                self.0.read(o)
+            }
+        }
+        fn write(&mut self, o: u32, v: u32) {
+            self.0.write(o, v);
+        }
+        fn now_microseconds(&mut self) -> u64 {
+            self.0.now_microseconds()
+        }
+    }
+    let wide = Wide(SimulatedHostController::new(
+        CardKind::SdHighCapacity,
+        1024,
+        32,
+    ));
+    let Err((error, Wide(window))) = HostController::new_returning_window(wide, 50_000_000, None)
+    else {
+        panic!("a 64-bit queue was taken");
+    };
+    assert_eq!(error, Error::QueueWidth(2));
+    assert!(window.commands.is_empty());
+}
+
 #[test]
 fn without_a_tree_depth_the_queue_depth_is_read_from_its_reset_watermark() {
     let (h, _) = HostController::new(
