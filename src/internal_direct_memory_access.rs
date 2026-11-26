@@ -189,7 +189,7 @@ impl core::error::Error for Refusal {}
 /// [`InternalDirectMemoryAccess::new`] makes one, so a [`HostController`] holding one has an IDMAC, 32-bit
 /// descriptors and a region they can address.
 #[doc(alias = "idmac")]
-pub struct InternalDirectMemoryAccess<D: DirectMemoryAccessRegion> {
+pub struct InternalDirectMemoryAccess<D> {
     region: D,
     region_direct_memory_access_bus_address: u32,
     capacity: u32,

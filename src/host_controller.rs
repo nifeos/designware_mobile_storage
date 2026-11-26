@@ -253,10 +253,7 @@ pub(crate) const fn queue_step(
 /// data moves by DMA, the IDMAC's region. `HostController<R>` is the polled driver;
 /// [`HostController::with_internal_direct_memory_access`] makes a `HostController<R, D>` whose
 /// every data phase goes through the IDMAC.
-pub struct HostController<
-    R: RegisterWindowAndClock,
-    D: DirectMemoryAccessRegion = NoDirectMemoryAccess,
-> {
+pub struct HostController<R, D = NoDirectMemoryAccess> {
     pub(crate) registers: R,
     queue_offset: u32,
     pub(crate) depth: u32,
