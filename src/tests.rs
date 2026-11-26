@@ -827,14 +827,14 @@ fn a_call_that_does_not_match_the_commands_data_phase_is_refused_unsent() {
     assert!(h.registers_mut().commands.is_empty());
 }
 
-/// **Every error variant prints its own sentence**, with its fields where it has them, so a board
-/// transcript that stops on one says which and where.
+fn text(e: impl core::fmt::Display) -> std::string::String {
+    std::format!("{e}")
+}
+
+/// **Every controller error prints its own sentence**, with its fields where it has them, so a
+/// board transcript that stops on one says which and where.
 #[test]
-fn every_error_variant_displays_its_sentence() {
-    use crate::internal_direct_memory_access::Refusal;
-    fn text(e: impl core::fmt::Display) -> std::string::String {
-        std::format!("{e}")
-    }
+fn every_controller_error_displays_its_sentence() {
     let host_errors = [
         (Error::QueueWidth(2), "unsupported FIFO width field 2"),
         (
@@ -876,6 +876,13 @@ fn every_error_variant_displays_its_sentence() {
     for (error, sentence) in host_errors {
         assert_eq!(text(error), sentence);
     }
+}
+
+/// **Every refusal of an IDMAC region prints its own sentence**, with the address or size it
+/// refused.
+#[test]
+fn every_region_refusal_displays_its_sentence() {
+    use crate::internal_direct_memory_access::Refusal;
     let refusals = [
         (
             Refusal::NoInternalDirectMemoryAccess(1),
@@ -901,6 +908,12 @@ fn every_error_variant_displays_its_sentence() {
     for (refusal, sentence) in refusals {
         assert_eq!(text(refusal), sentence);
     }
+}
+
+/// **Every bring-up and block transfer error prints its own sentence**, with the controller error
+/// under it where it carries one.
+#[test]
+fn every_card_error_displays_its_sentence() {
     let initialization_errors = [
         (
             InitializationError::Controller(Error::ResetStuck(1)),
