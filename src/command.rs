@@ -238,9 +238,18 @@ impl Command {
 pub(crate) const UPDATE_CLOCK: u32 = registers::COMMAND_START
     | registers::COMMAND_WAIT_FOR_PREVIOUS_DATA_COMPLETE
     | registers::COMMAND_UPDATE_CLOCK_REGISTERS_ONLY;
+// Its three bits are distinct (31, 13 and 21), which the compiler checks here; the mutation
+// exemptions for this word name this check.
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(
+    registers::COMMAND_START
+        + registers::COMMAND_WAIT_FOR_PREVIOUS_DATA_COMPLETE
+        + registers::COMMAND_UPDATE_CLOCK_REGISTERS_ONLY
+        == 0x8020_2000
+);
 
 // The three fields a `CMD` word composes share no bit (start at bit 31, the hold register at bit
-// 29, the command index in bits 5:0), which the compiler checks here; the mutation exclusion for
+// 29, the command index in bits 5:0), which the compiler checks here; the mutation exemption for
 // `Command::register_word` names this check. The constant-assertion lint is off on purpose: the
 // assertion is constant by construction, and the compiler checking it is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]

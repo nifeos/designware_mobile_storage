@@ -125,11 +125,22 @@ pub(crate) const DESCRIPTOR_DISABLE_INTERRUPT_ON_COMPLETION: u32 = 1 << 1;
 /// Word 1: the first buffer's size in bytes, bits 12:0.
 pub(crate) const DESCRIPTOR_BUFFER_1_BYTES_MASK: u32 = 0x1fff;
 // The two word-0 bits every descriptor is written with share no bit (31 and 4), which the compiler
-// checks here; the mutation exclusion for `descriptor` names this check. The constant-assertion
+// checks here; the mutation exemption for `descriptor` names this check. The constant-assertion
 // lint is off on purpose: the assertion is constant by construction, and the compiler checking it
 // is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
 const _: () = assert!(DESCRIPTOR_OWNED_BY_CONTROLLER + DESCRIPTOR_CHAINED == 0x8000_0010);
+// The four `CONTROL_REGISTER` bits that stopping the IDMAC clears share no bit (25, 5, 2 and 1),
+// which the compiler checks here; the mutation exemption for `internal_direct_memory_access_stop`
+// names this check.
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(
+    registers::CONTROL_USE_INTERNAL_DIRECT_MEMORY_ACCESS_CONTROLLER
+        + registers::CONTROL_DIRECT_MEMORY_ACCESS_ENABLE
+        + registers::CONTROL_DIRECT_MEMORY_ACCESS_RESET
+        + registers::CONTROL_QUEUE_RESET
+        == 0x0200_0026
+);
 
 /// Why a region was refused before anything was written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -489,9 +500,14 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             registers::BUS_MODE_REGISTER,
             registers::BUS_MODE_SOFTWARE_RESET,
         );
+        // The two resets are masked out of `control` before they are set, which changes nothing
+        // written (a bit cleared and then set is set) but makes setting them by `|` and by `^` the
+        // same, whatever the register held.
         let control = self.registers.read(registers::CONTROL_REGISTER)
             & !(registers::CONTROL_USE_INTERNAL_DIRECT_MEMORY_ACCESS_CONTROLLER
-                | registers::CONTROL_DIRECT_MEMORY_ACCESS_ENABLE);
+                | registers::CONTROL_DIRECT_MEMORY_ACCESS_ENABLE
+                | registers::CONTROL_DIRECT_MEMORY_ACCESS_RESET
+                | registers::CONTROL_QUEUE_RESET);
         self.registers.write(
             registers::CONTROL_REGISTER,
             control
@@ -994,6 +1010,24 @@ mod tests {
                 & registers::RAW_INTERRUPT_AUTOMATIC_COMMAND_DONE,
             0
         );
+    }
+
+    /// Arming the IDMAC sets its select and enable bits whatever `CONTROL_REGISTER` already
+    /// holds: a select and an enable left set (by firmware, say) stay set, and the transfer runs.
+    #[test]
+    fn a_select_and_an_enable_already_set_when_the_internal_direct_memory_access_controller_is_armed_stay_set()
+     {
+        let (h, card, memory) = polled(2);
+        let mut h = with_internal_direct_memory_access(h, &memory);
+        let control = h.registers_mut().peek(registers::CONTROL_REGISTER);
+        h.registers_mut().poke(
+            registers::CONTROL_REGISTER,
+            control
+                | registers::CONTROL_USE_INTERNAL_DIRECT_MEMORY_ACCESS_CONTROLLER
+                | registers::CONTROL_DIRECT_MEMORY_ACCESS_ENABLE,
+        );
+        let mut block = [0u8; 512];
+        sd::read_blocks(&mut h, &card, 7, &mut block).unwrap();
     }
 
     /// A reset that never clears is reported, not assumed done, with the word that holds it:

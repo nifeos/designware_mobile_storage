@@ -444,6 +444,19 @@ fn written_blocks_are_stored_lost_or_mangled_by_write_command() {
     assert_eq!(s.storage[4][1..], data[1..]);
 }
 
+/// A card holds `DATA_BUSY` in `STATUS` while it programs a written block, as silicon does, so a
+/// driver that does not wait it out is caught: here for the two readings after the last word
+/// lands. The write helper's last reading is the first of them.
+#[test]
+fn a_finished_write_reports_the_card_busy_for_two_status_readings() {
+    let mut s = simulator(CardKind::SdHighCapacity, 32);
+    selected(&mut s);
+    assert_eq!(s.read(STATUS_REGISTER) & STATUS_DATA_BUSY, 0);
+    write_block(&mut s, 3, &[0x5a; 512]);
+    assert_ne!(s.read(STATUS_REGISTER) & STATUS_DATA_BUSY, 0);
+    assert_eq!(s.read(STATUS_REGISTER) & STATUS_DATA_BUSY, 0);
+}
+
 /// A memory of two descriptor pages and four data pages behind `s`, the IDMAC pointed at its first
 /// descriptor and selected and enabled as `control` and `bus_mode` say.
 fn attach(s: &mut SimulatedHostController, control: u32, bus_mode: u32) -> Memory {

@@ -6,66 +6,73 @@
 # The Kani proofs in src/proofs.rs are excluded in .cargo/mutants.toml, which says why. The simulated
 # controller in src/simulator.rs ships behind the `simulator` feature, so it is mutated like the rest.
 
-# Equivalent: `1 << 0` and `1 >> 0` are both 1.
-src/card.rs:107 # `1 >> 0` is `1 << 0`, both 1
+# Identity: `1 << 0` and `1 >> 0` are both 1.
 src/registers.rs:25 # `1 >> 0` is `1 << 0`, both 1
-src/registers.rs:93 # `1 >> 0` is `1 << 0`, both 1
-src/registers.rs:118 # `1 >> 0` is `1 << 0`, both 1
-src/registers.rs:428 # `1 >> 0` is `1 << 0`, both 1
-src/registers.rs:470 # `1 >> 0` is `1 << 0`, both 1
-src/registers.rs:527 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:101 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:126 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:456 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:498 # `1 >> 0` is `1 << 0`, both 1
+src/registers.rs:564 # `1 >> 0` is `1 << 0`, both 1
 
-# Equivalent: `|` and `^` agree on operands that share no bit.
-src/card.rs:22 # bits 20 and 21 are distinct, so `^` between them is `|`
-src/card.rs:26 # high capacity is bit 30 and the voltage window bits 20 and 21, so `^` is `|`
-src/card.rs:78 # the access mode (bits 25:24), byte index (23:16), value (15:8) and command set (2:0) share no bit
-src/command.rs:209 # `w` holds start, hold and the index (bits 31, 29, 5:0) and never the stop bit 14, so `^=` is `|=`
-src/command.rs:210 # `w` holds start, hold and the index (bits 31, 29, 5:0) and never the wait bit 13, so `^=` is `|=`
-src/command.rs:243 # start, wait-previous and update-clock are three distinct bits, so `^` is `|`
-src/command.rs:244 # start, wait-previous and update-clock are three distinct bits, so `^` is `|`
-src/host_controller.rs:395 # the IDMAC-select, DMA-enable and interrupt-enable bits are distinct, so `^` is `|`
-src/host_controller.rs:396 # the IDMAC-select, DMA-enable and interrupt-enable bits are distinct, so `^` is `|`
-src/host_controller.rs:500 # card clock enable and low power are distinct bits, so `^` is `|`
-src/host_controller.rs:597 # the response CRC and response error bits are distinct, so `^` is `|`
-src/host_controller.rs:758 # the data error and data timeout masks share no bit, so `^` is `|`
-src/host_controller.rs:783 # data-transfer-over and automatic-command-done are distinct bits, so `^` is `|`
-src/host_controller.rs:792 # the data error and data timeout masks share no bit, so `^` is `|`
-src/internal_direct_memory_access.rs:299 # owned and chained are distinct descriptor bits, so `^` is `|`
-src/internal_direct_memory_access.rs:396 # IDMAC enable and fixed burst are distinct bits, so `^` is `|`
-src/internal_direct_memory_access.rs:415 # data-transfer-over and automatic-command-done are distinct bits, so `^` is `|`
-src/internal_direct_memory_access.rs:486 # IDMAC select and DMA enable are distinct bits, so `^` is `|`
-src/internal_direct_memory_access.rs:495 # the DMA and FIFO reset bits are distinct, so `^` is `|`
-src/internal_direct_memory_access.rs:512 # the DMA and FIFO reset bits are distinct, so `^` is `|`
-src/registers.rs:41 # the controller, FIFO and DMA reset bits are distinct, so `^` is `|`
-src/registers.rs:305 # the data error bits are distinct, so `^` is `|`
-src/registers.rs:306 # the data error bits are distinct, so `^` is `|`
-src/registers.rs:307 # the data error bits are distinct, so `^` is `|`
-src/registers.rs:308 # the data error bits are distinct, so `^` is `|`
-src/registers.rs:314 # host timeout and data read timeout are distinct bits, so `^` is `|`
-src/registers.rs:364 # the three FIFOTH fields share no bit, which the assertion above the function checks
-src/registers.rs:390 # the three FIFOTH fields share no bit, which the assertion above the function checks
-src/registers.rs:508 # the IDSTS error bits are distinct, so `^` is `|`
-src/registers.rs:509 # the IDSTS error bits are distinct, so `^` is `|`
-# Equivalent: `control` was just read with these bits clear, so setting them by `^` is setting them by `|`.
-src/internal_direct_memory_access.rs:391 # every reset and stop clears DMA enable, so `control` never holds it here
-src/internal_direct_memory_access.rs:490 # the reset bits self-clear and each reset waits for that, so `control` holds neither
-src/internal_direct_memory_access.rs:491 # the reset bits self-clear and each reset waits for that, so `control` holds neither
+# Identity: `|` and `^` agree on operands that share no bit, and the operands here are literal
+# shifts whose bits can be read off the line.
+src/card.rs:22 # `1 << 20` and `1 << 21` share no bit, so `^` is `|`
+src/card.rs:26 # high capacity is `1 << 30` and the voltage window `1 << 20` and `1 << 21`, so `^` is `|`
+src/simulator.rs:445 # `state << 9` has bits 8:0 clear, so `^ (1 << 8)` is `| (1 << 8)`
+src/simulator.rs:446 # `^` binds tighter than `|`: `(1 << 8) ^ (1 << 5 or 0)` is `(1 << 8) | (1 << 5 or 0)`
+src/simulator.rs:550 # a value shifted left by 16 has bits 15:0 clear, so `^ 0x0500` is `| 0x0500`
+
+# Equivalent: `|` and `^` agree on operands that share no bit, and a compile-time assertion next to
+# each group of constants checks that they share none (their sum equals their union).
+src/command.rs:205 # start, hold and the index share no bit: the assertion after UPDATE_CLOCK
+src/command.rs:206 # start, hold and the index share no bit: the assertion after UPDATE_CLOCK
+src/command.rs:239 # start, wait-previous and update-clock share no bit: the assertion below the constant
+src/command.rs:240 # start, wait-previous and update-clock share no bit: the assertion below the constant
+src/host_controller.rs:395 # IDMAC select, DMA enable and interrupt enable share no bit: the assertion in registers.rs
+src/host_controller.rs:396 # IDMAC select, DMA enable and interrupt enable share no bit: the assertion in registers.rs
+src/host_controller.rs:500 # card clock enable and low power share no bit: the assertion in registers.rs
+src/host_controller.rs:598 # the response CRC and response error bits share no bit: the assertion in registers.rs
+src/host_controller.rs:757 # the data error and data timeout masks share no bit: the assertion in registers.rs
+src/host_controller.rs:782 # transfer-over and automatic-command-done share no bit: the assertion in registers.rs
+src/host_controller.rs:791 # the data error and data timeout masks share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:310 # owned and chained share no bit: the assertion after the descriptor bits
+src/internal_direct_memory_access.rs:415 # `^` binds tighter than `|`, and IDMAC select and DMA enable share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:420 # IDMAC enable and fixed burst share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:440 # transfer-over and automatic-command-done share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:508 # the four stop bits share no bit: the assertion after the descriptor assertion
+src/internal_direct_memory_access.rs:509 # the four stop bits share no bit: the assertion after the descriptor assertion
+src/internal_direct_memory_access.rs:514 # `control` has both resets masked out just above, and they share no bit, so `^` sets them as `|` does
+src/internal_direct_memory_access.rs:515 # `^` binds tighter than `|`, and the two resets share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:519 # the two resets share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:536 # the two resets share no bit: the assertion in registers.rs
+src/registers.rs:41 # the controller, queue and DMA resets share no bit: the assertion below the mask
+src/registers.rs:318 # the five data errors share no bit: the assertion below the mask
+src/registers.rs:319 # the five data errors share no bit: the assertion below the mask
+src/registers.rs:320 # the five data errors share no bit: the assertion below the mask
+src/registers.rs:321 # the five data errors share no bit: the assertion below the mask
+src/registers.rs:338 # host timeout and data read timeout share no bit: the assertion below the mask
+src/registers.rs:392 # the three FIFOTH fields share no bit: the assertion above the function
+src/registers.rs:418 # the three FIFOTH fields share no bit: the assertion above the function
+src/registers.rs:536 # the three IDMAC errors share no bit: the assertion below the mask
+src/registers.rs:537 # the three IDMAC errors share no bit: the assertion below the mask
+src/simulator.rs:752 # FRUN and DTO share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:759 # DCRC and DTO share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:766 # DRTO and DTO share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:797 # IDMAC select and DMA enable share no bit: the assertion in registers.rs
+src/simulator.rs:859 # DU and AIS share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:896 # RI or TI and NIS share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:937 # FBE and AIS share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+
+# Identity: the stop masks four bits out of `control` and then sets the two resets, so a mask that
+# keeps a reset in `control` leaves a bit that the next line sets anyway. `^` and `&` bind tighter
+# than `|`, so each mutant changes only the last term.
+src/internal_direct_memory_access.rs:510 # `RESET ^ QUEUE_RESET` is their union and `RESET & QUEUE_RESET` is 0, and a reset kept in `control` is set again on the next line
 
 # Equivalent: the two comparisons differ only where both branches give the same value.
-src/card.rs:122 # a width of exactly 32 is clamped to 32 either way
-src/card.rs:129 # at `shift + width == 32` the next word's bits land at bit `width` and up, which the mask clears
-src/host_controller.rs:238 # a FIFO count equal to the depth is clamped to the depth either way
+src/card.rs:52 # a width of exactly 32 is clamped to 32 either way
+src/card.rs:59 # at `shift + width == 32` the next word's bits land at bit `width` and up, which the mask clears
+src/host_controller.rs:238 # a queue count equal to the depth is clamped to the depth either way
 src/host_controller.rs:245 # at `bytes == remaining` both branches return the same number
-
-# Equivalent: the FIFO count in STATUS, which `queue_step` reads, bounds every move. The request
-# and transfer-over bits only say when to look, so moving whenever the count allows moves the same
-# words in the same order.
-src/host_controller.rs:766 # waiting on any status bit, not just the request, moves the same words, as above
-src/host_controller.rs:767 # waiting on any status bit, not just transfer-over, moves the same words, as above
-# Equivalent: the status word was read before the FIFO writes and passed `data_phase_failure`, so
-# beyond TXDR it holds only bits of the command phase (CD) that nothing reads again; clearing them
-# too changes no later wait.
-src/host_controller.rs:739 # clearing CD with TXDR changes nothing, as above
 
 # Unreachable: `NoDirectMemoryAccess` is uninhabited, so no value exists to call these on.
 src/internal_direct_memory_access.rs:70 # a method of an uninhabited type is never called
@@ -76,29 +83,6 @@ src/internal_direct_memory_access.rs:82 # a method of an uninhabited type is nev
 src/internal_direct_memory_access.rs:85 # a method of an uninhabited type is never called
 src/internal_direct_memory_access.rs:88 # a method of an uninhabited type is never called
 
-# Unobservable through the public interface: the exported simulator records a missed fence but
-# does not report it, so no caller's test can see a skipped barrier. The crate's own tests check
-# every barrier against the inner simulator.
-src/exported_simulator.rs:172 # the wrapper's barrier only clears fence flags the public simulator never reports
-
-# Hangs: the mutant takes away what ends a loop, and every test that reaches it runs to the timeout.
-src/card.rs:221 # `i *= 1` leaves `i` at 0, so decoding an SD card's CID never ends
-src/card.rs:237 # `i *= 1` leaves `i` at 0, so decoding an eMMC's CID never ends
-
-# The simulator. Equivalent: `|` and `^` agree on operands that share no bit.
-src/simulator.rs:431 # R1's state field (bits 12:9) and READY_FOR_DATA (bit 8) are distinct, so `^` is `|`
-src/simulator.rs:432 # APP_CMD (bit 5) is distinct from the state and READY_FOR_DATA bits, so `^` is `|`
-src/simulator.rs:538 # the relative address (bits 31:16) and the status bits 0x0500 are distinct, so `^` is `|`
-src/simulator.rs:557 # the switch error (bit 7) is distinct from every bit R1 sets here, so `^` is `|`
-src/simulator.rs:815 # FRUN (bit 11) and DTO (bit 3) are distinct, so `^` is `|`
-src/simulator.rs:822 # DCRC (bit 7) and DTO (bit 3) are distinct, so `^` is `|`
-src/simulator.rs:829 # DRTO (bit 9) and DTO (bit 3) are distinct, so `^` is `|`
-src/simulator.rs:860 # IDMAC select (bit 25) and DMA enable (bit 5) are distinct, so `^` is `|`
-src/simulator.rs:922 # DU (bit 4) and AIS (bit 9) are distinct, so `^` is `|`
-src/simulator.rs:959 # RI or TI (bit 1 or 0) and NIS (bit 8) are distinct, so `^` is `|`
-src/simulator.rs:1000 # FBE (bit 2) and AIS (bit 9) are distinct, so `^` is `|`
-# Equivalent: APP_CMD is set twice in the CMD55 answer, and either alone sets it.
-src/simulator.rs:433 # the pending flag is true only inside the CMD55 arm, which ORs in bit 5 itself, so a zero here changes nothing
-src/simulator.rs:511 # `r1` already carries bit 5 here, since the arm sets the pending flag before calling it, so ORing in 0 changes nothing
-# Harness only: the simulated clock is the harness's own deadline source.
-src/simulator.rs:1188 # a clock frozen at 0 or 1, or stuck at 0 by `*=`, only makes a waiting test hang to the timeout; no answer changes
+# Harness only: the read count bounds a runaway driver and holds no answer, so a count that never
+# grows changes no test that passes.
+src/simulator.rs:975 # `reads *= 1` keeps the count at 0, which only removes the bound a passing test never reaches

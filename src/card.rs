@@ -174,6 +174,36 @@ impl CardIdentification {
     }
 }
 
+// A CID decoded at compile time, as an SD card's and as an eMMC's: bytes 0x03, "SDSL32G", 0x80
+// and on, most significant first. Each decode walks its name with a counter, so a decoder whose
+// counter stops moving never ends; evaluated here, that is a build error rather than a test that
+// runs until it is killed. The constant-assertion lint is off on purpose: the compiler checking
+// a constant is the point.
+const IDENTIFICATION_EXAMPLE: [u32; 4] = [0x7801_2345, 0x8012_3456, 0x4c33_3247, 0x0353_4453];
+#[allow(clippy::assertions_on_constants)]
+const _: () = {
+    let sd = CardIdentification::from_sd_register(&IDENTIFICATION_EXAMPLE);
+    assert!(sd.manufacturer == 0x03 && sd.serial == 0x1234_5678);
+    assert!(
+        sd.name[0] == b'S'
+            && sd.name[1] == b'L'
+            && sd.name[2] == b'3'
+            && sd.name[3] == b'2'
+            && sd.name[4] == b'G'
+            && sd.name[5] == 0
+    );
+    let multimedia_card = CardIdentification::multimedia_card(&IDENTIFICATION_EXAMPLE);
+    assert!(multimedia_card.manufacturer == 0x03 && multimedia_card.serial == 0x3456_7801);
+    assert!(
+        multimedia_card.name[0] == b'S'
+            && multimedia_card.name[1] == b'L'
+            && multimedia_card.name[2] == b'3'
+            && multimedia_card.name[3] == b'2'
+            && multimedia_card.name[4] == b'G'
+            && multimedia_card.name[5] == 0x80
+    );
+};
+
 /// The extended card-specific data register's (`EXT_CSD`) `SEC_COUNT`, bytes 212 to 215,
 /// little-endian: an eMMC's capacity in 512-byte sectors. Zero for a buffer too short to hold it.
 #[doc(alias = "ext_csd")]
