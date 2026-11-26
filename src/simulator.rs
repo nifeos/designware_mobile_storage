@@ -520,7 +520,7 @@ impl SimulatedHostController {
             (55, _, CardKind::MultimediaCard) => None,
             (55, _, _) => {
                 self.application_command_pending = true;
-                short(self.r1() | 1 << 5)
+                short(self.r1())
             }
             (41, true, _) | (1, false, CardKind::MultimediaCard) => {
                 self.power_up_polls += 1;
