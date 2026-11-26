@@ -262,6 +262,8 @@ pub struct SimulatedHostController {
     pub direct_memory_access_corrupts: bool,
     /// The direction of the last data command: the way the IDMAC moves words.
     direct_memory_access_write: bool,
+    /// How many register reads the driver has made, FIFO words included.
+    reads: usize,
 }
 
 /// The most register writes, and the most commands, one simulated controller records. The busiest
@@ -271,6 +273,12 @@ pub struct SimulatedHostController {
 /// clock only advances on a read. Past the bound the simulator panics, so the stuck test fails at
 /// once and says why.
 pub(crate) const RECORDED_MOST: usize = 1 << 22;
+
+/// The most register reads one simulated controller answers. The busiest test here reads under
+/// a quarter of it. A wait whose deadline never comes (a clock that does not advance, or a
+/// deadline that cannot pass) polls without writing, so [`RECORDED_MOST`] never stops it; past
+/// this bound the simulator panics, so the stuck test fails at once and says why.
+pub(crate) const READ_MOST: usize = 1 << 23;
 
 /// The `VERID` the simulation reports: release 2.90a, which puts the FIFO at `0x200`.
 pub(crate) const SIMULATED_VERSION_IDENTIFICATION: u32 = 0x5342_290a;
@@ -309,6 +317,7 @@ impl SimulatedHostController {
             write_commands: 0,
             strict_watermark: false,
             writes: Vec::new(),
+            reads: 0,
             reset_stuck: false,
             clock_stuck: false,
             clock_updates_taken: None,
@@ -933,6 +942,11 @@ impl SimulatedHostController {
 
 impl RegisterWindowAndClock for SimulatedHostController {
     fn read(&mut self, offset: u32) -> u32 {
+        self.reads += 1;
+        assert!(
+            self.reads <= READ_MOST,
+            "runaway driver: {READ_MOST} register reads of one simulated controller"
+        );
         let queue_offset = registers::queue_offset(self.version_identification);
         if offset == queue_offset {
             let w = self.queue.pop_front().unwrap_or(0xdead_dead);
