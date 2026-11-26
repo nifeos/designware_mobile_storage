@@ -39,6 +39,14 @@ pub(crate) const CONTROL_DIRECT_MEMORY_ACCESS_RESET: u32 = 1 << 2;
 #[doc(alias = "CTRL_ALL_RESET")]
 pub(crate) const CONTROL_ALL_RESETS_MASK: u32 =
     CONTROL_CONTROLLER_RESET | CONTROL_QUEUE_RESET | CONTROL_DIRECT_MEMORY_ACCESS_RESET;
+// The three reset bits share no bit (0, 1 and 2), which the compiler checks here; the mutation
+// exemptions for this mask and for the IDMAC stop name this check. The constant-assertion lint is
+// off on purpose: the assertion is constant by construction, and the compiler checking it is its
+// job.
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(
+    CONTROL_CONTROLLER_RESET + CONTROL_QUEUE_RESET + CONTROL_DIRECT_MEMORY_ACCESS_RESET == 0x7
+);
 /// **Interrupt enable** (OpenBSD's `SDMMC_CTRL_INT_ENABLE`): the global interrupt enable. This
 /// driver polls, so it stays clear: an interrupt nobody routes is a line held asserted at the
 /// platform-level interrupt controller (PLIC) for no reader.
@@ -56,7 +64,7 @@ pub(crate) const CONTROL_DIRECT_MEMORY_ACCESS_ENABLE: u32 = 1 << 5;
 #[doc(alias = "CTRL_USE_INTERNAL_DMAC")]
 pub(crate) const CONTROL_USE_INTERNAL_DIRECT_MEMORY_ACCESS_CONTROLLER: u32 = 1 << 25;
 // The three enables `reset` clears and the IDMAC arms share no bit (25, 5 and 4), which the
-// compiler checks here; the mutation exclusions for `HostController::reset` and
+// compiler checks here; the mutation exemptions for `HostController::reset` and
 // `internal_direct_memory_access_start` name this check. The constant-assertion lint is off on
 // purpose: the assertion is constant by construction, and the compiler checking it is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
@@ -97,7 +105,7 @@ pub(crate) const CLOCK_ENABLE_CARD_CLOCK: u32 = 1 << 0;
 #[doc(alias = "CLKENA_CCLK_LOW_POWER")]
 pub(crate) const CLOCK_ENABLE_CARD_CLOCK_LOW_POWER: u32 = 1 << 16;
 // The two clock-enable bits `set_clock` writes share no bit (0 and 16), which the compiler checks
-// here; the mutation exclusion for `HostController::set_clock` names this check. The constant-assertion
+// here; the mutation exemption for `HostController::set_clock` names this check. The constant-assertion
 // lint is off on purpose: the assertion is constant by construction, and the compiler checking it
 // is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
@@ -250,6 +258,11 @@ pub(crate) const RAW_INTERRUPT_RECEIVE_QUEUE_DATA_REQUEST: u32 = 1 << 5;
 #[doc(alias = "response CRC error")]
 #[doc(alias = "RINTSTS_RCRC")]
 pub(crate) const RAW_INTERRUPT_RESPONSE_CRC_ERROR: u32 = 1 << 6;
+// The two response failures share no bit (1 and 6), which the compiler checks here; the mutation
+// exemption for `start_command` names this check. The constant-assertion lint is off on purpose:
+// the assertion is constant by construction, and the compiler checking it is its job.
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(RAW_INTERRUPT_RESPONSE_ERROR + RAW_INTERRUPT_RESPONSE_CRC_ERROR == 0x42);
 /// **Data CRC error** (OpenBSD's `SDMMC_RINTSTS_DCRC`): data CRC error.
 #[doc(alias = "data CRC error")]
 #[doc(alias = "RINTSTS_DCRC")]
@@ -286,7 +299,7 @@ pub(crate) const RAW_INTERRUPT_START_BIT_ERROR: u32 = 1 << 13;
 #[doc(alias = "RINTSTS_ACD")]
 pub(crate) const RAW_INTERRUPT_AUTOMATIC_COMMAND_DONE: u32 = 1 << 14;
 // The transfer-over bits `finish` and the IDMAC wait for share no bit (3 and 14), which the
-// compiler checks here; the mutation exclusions for `HostController::finish` and the IDMAC wait name this
+// compiler checks here; the mutation exemptions for `HostController::finish` and the IDMAC wait name this
 // check. The constant-assertion lint is off on purpose: the assertion is constant by
 // construction, and the compiler checking it is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
@@ -314,7 +327,7 @@ pub(crate) const RAW_INTERRUPT_DATA_TIMEOUT_MASK: u32 =
     RAW_INTERRUPT_HOST_TIMEOUT | RAW_INTERRUPT_DATA_READ_TIMEOUT;
 // The data-error group and the data-timeout group share no bit with each other ({15, 13, 12, 11,
 // 7} against {10, 9}), which the compiler checks here; every masked test that composes them, and
-// the mutation exclusions that cover those tests, name this check. The constant-assertion lint
+// the mutation exemptions that cover those tests, name this check. The constant-assertion lint
 // is off on purpose: the assertion is constant by construction, and the compiler checking it is
 // its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
@@ -348,7 +361,7 @@ pub(crate) const QUEUE_THRESHOLD_REGISTER: u32 = 0x04c;
 
 // The three fields the polled `FIFOTH` word composes share no bit (the burst code at bit 29, the
 // receive watermark in bits 27:16, the transmit watermark in bits 11:0), which the compiler checks
-// here; the mutation exclusion for `queue_threshold_for_programmed_io` names this check. The constant-assertion
+// here; the mutation exemption for `queue_threshold_for_programmed_io` names this check. The constant-assertion
 // lint is off on purpose: the assertion is constant by construction, and the compiler checking it
 // is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
@@ -366,7 +379,7 @@ pub(crate) const fn queue_threshold_for_programmed_io(depth: u32) -> u32 {
 
 // The three fields the IDMAC `FIFOTH` word composes share no bit (the burst encoding in bits
 // 31:29, whose largest code is 7, the receive watermark in bits 27:16, the transmit watermark in
-// bits 11:0), which the compiler checks here; the mutation exclusion for
+// bits 11:0), which the compiler checks here; the mutation exemption for
 // `queue_threshold_for_direct_memory_access` names this check. The constant-assertion lint is off on
 // purpose: the assertion is constant by construction, and the compiler checking it is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
@@ -432,7 +445,7 @@ pub(crate) const BUS_MODE_SOFTWARE_RESET: u32 = 1 << 0;
 #[doc(alias = "BMOD_FB")]
 pub(crate) const BUS_MODE_FIXED_BURST: u32 = 1 << 1;
 // The two bus-mode bits the IDMAC arm writes share no bit (7 and 1), which the compiler checks
-// here; the mutation exclusion for `internal_direct_memory_access_start` names this check. The
+// here; the mutation exemption for `internal_direct_memory_access_start` names this check. The
 // constant-assertion lint is off on purpose: the assertion is constant by construction, and the
 // compiler checking it is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]

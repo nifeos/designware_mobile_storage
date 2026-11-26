@@ -285,6 +285,36 @@ pub(crate) const SIMULATED_VERSION_IDENTIFICATION: u32 = 0x5342_290a;
 /// The `HCON` it reports: a 32-bit FIFO, 32-bit addresses.
 pub(crate) const SIMULATED_HARDWARE_CONFIGURATION: u32 = 1 << 7;
 
+// The status bits the simulation raises together share no bit, which the compiler checks here;
+// the mutation exemptions for the simulator name these checks. In `RINTSTS`, each way a read
+// ends (overrun bit 11, data CRC error bit 7, read timeout bit 9) is raised with `DTO` (bit 3).
+// In `IDSTS`, a descriptor unavailable (bit 4) or a fatal bus error (bit 2) is raised with the
+// abnormal summary (bit 9), and a transmit or receive close (bit 0 or 1) with the normal summary
+// (bit 8). The constant-assertion lint is off on purpose: the assertions are constant by
+// construction, and the compiler checking them is their job.
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(
+    registers::RAW_INTERRUPT_QUEUE_UNDERRUN_OR_OVERRUN
+        + registers::RAW_INTERRUPT_DATA_CRC_ERROR
+        + registers::RAW_INTERRUPT_DATA_READ_TIMEOUT
+        + registers::RAW_INTERRUPT_DATA_TRANSFER_OVER
+        == 0x0a88
+);
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(
+    registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_DESCRIPTOR_UNAVAILABLE
+        + registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_FATAL_BUS_ERROR
+        + registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ABNORMAL_INTERRUPT_SUMMARY
+        == 0x0214
+);
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(
+    registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_TRANSMIT_INTERRUPT
+        + registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_RECEIVE_INTERRUPT
+        + registers::INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_NORMAL_INTERRUPT_SUMMARY
+        == 0x0103
+);
+
 impl SimulatedHostController {
     /// A controller of FIFO `depth` words with `kind` of card holding `blocks` blocks of zero.
     #[must_use]

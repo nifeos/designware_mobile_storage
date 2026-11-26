@@ -125,7 +125,7 @@ pub(crate) const DESCRIPTOR_DISABLE_INTERRUPT_ON_COMPLETION: u32 = 1 << 1;
 /// Word 1: the first buffer's size in bytes, bits 12:0.
 pub(crate) const DESCRIPTOR_BUFFER_1_BYTES_MASK: u32 = 0x1fff;
 // The two word-0 bits every descriptor is written with share no bit (31 and 4), which the compiler
-// checks here; the mutation exclusion for `descriptor` names this check. The constant-assertion
+// checks here; the mutation exemption for `descriptor` names this check. The constant-assertion
 // lint is off on purpose: the assertion is constant by construction, and the compiler checking it
 // is its job.
 #[allow(clippy::assertions_on_constants, clippy::eq_op)]
