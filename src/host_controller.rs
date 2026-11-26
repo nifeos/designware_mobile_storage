@@ -263,6 +263,22 @@ pub struct HostController<R, D = NoDirectMemoryAccess> {
     pub(crate) direct_memory_access: Option<InternalDirectMemoryAccess<D>>,
 }
 
+/// The controller's state, and whether its data moves through the IDMAC. The register window is
+/// left out: reading a register can change the controller (a read of the FIFO takes a word), and
+/// the window need not implement `Debug`.
+impl<R, D> core::fmt::Debug for HostController<R, D> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("HostController")
+            .field("queue_offset", &self.queue_offset)
+            .field("queue_depth_words", &self.depth)
+            .field("base_hertz", &self.base_hertz)
+            .field("hardware_configuration", &self.hardware_configuration)
+            .field("deadlines", &self.deadlines)
+            .field("direct_memory_access", &self.direct_memory_access)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<R: RegisterWindowAndClock> HostController<R> {
     /// **Take a controller**, reading its identity and touching nothing.
     ///

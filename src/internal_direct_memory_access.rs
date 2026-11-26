@@ -195,6 +195,20 @@ pub struct InternalDirectMemoryAccess<D> {
     capacity: u32,
 }
 
+/// Where the region sits on the bus and how much one transfer moves. The region itself is left
+/// out: its bytes are the caller's, and the region need not implement `Debug`.
+impl<D> core::fmt::Debug for InternalDirectMemoryAccess<D> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("InternalDirectMemoryAccess")
+            .field(
+                "region_direct_memory_access_bus_address",
+                &self.region_direct_memory_access_bus_address,
+            )
+            .field("capacity_bytes", &self.capacity)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<D: DirectMemoryAccessRegion> InternalDirectMemoryAccess<D> {
     /// **Check `region` against the controller `id` describes.**
     ///
@@ -603,6 +617,29 @@ mod tests {
 
     fn pattern(seed: u8, len: usize) -> Vec<u8> {
         (0..len).map(|i| (i % 251) as u8 ^ seed).collect()
+    }
+
+    /// **A host and its engine print their state, not their window or region**: the FIFO, the
+    /// clock, the deadlines and where the region sits, so a board transcript can show them, with
+    /// neither the window nor the region implementing `Debug` or being read.
+    #[test]
+    fn a_host_and_its_engine_print_their_state_and_not_their_window() {
+        let (h, _, memory) = polled(4);
+        let polled_text = std::format!("{h:?}");
+        assert!(polled_text.starts_with("HostController {"), "{polled_text}");
+        assert!(polled_text.contains("queue_depth_words: 32"), "{polled_text}");
+        assert!(polled_text.contains("base_hertz: 50000000"), "{polled_text}");
+        assert!(polled_text.contains("direct_memory_access: None"), "{polled_text}");
+        assert!(polled_text.ends_with(", .. }"), "{polled_text}");
+        let h = with_internal_direct_memory_access(h, &memory);
+        let engine_text = std::format!("{h:?}");
+        assert!(
+            engine_text.contains(
+                "Some(InternalDirectMemoryAccess { region_direct_memory_access_bus_address: \
+                 2147483648, capacity_bytes: 12288, .. })"
+            ),
+            "{engine_text}"
+        );
     }
 
     /// **Every descriptor bit, as a number, and a chain as the databook lays it out.** The driver
