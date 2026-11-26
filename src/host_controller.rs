@@ -114,38 +114,103 @@ impl core::fmt::Display for Error {
 impl core::error::Error for Error {}
 
 /// The controller's identity, read before anything is written: what a board transcript prints.
+///
+/// Only [`HostController::new`] makes one, from the registers it read; a caller reads its values
+/// through the methods named after them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Identity {
     /// `VERID`, the version identification.
+    pub(crate) version_identification: u32,
+    /// `HCON`, the hardware configuration.
+    pub(crate) hardware_configuration: u32,
+    /// `USRID`, the user identification.
+    pub(crate) user_identification: u32,
+    /// `FIFOTH` as found, whose receive watermark is `depth - 1` out of reset.
+    pub(crate) queue_threshold: u32,
+    /// `CDETECT` as found: bit 0 clear means a card is present.
+    pub(crate) card_detect: u32,
+    /// `SDMMC_CTRL` in OpenBSD and FreeBSD, the control register, as the firmware left it.
+    pub(crate) host_control: u32,
+    /// `SDMMC_PWREN` in OpenBSD and FreeBSD, the power enable register, as the firmware left it.
+    pub(crate) power_enable: u32,
+    /// `SDMMC_CLKDIV` in OpenBSD and FreeBSD, the clock divider register, as the firmware left it.
+    pub(crate) clock_divider: u32,
+    /// `SDMMC_CLKENA` in OpenBSD and FreeBSD, the clock enable register, as the firmware left it.
+    pub(crate) clock_enable: u32,
+    /// `SDMMC_CTYPE` in OpenBSD and FreeBSD, the card type register, as the firmware left it.
+    pub(crate) card_type: u32,
+}
+
+impl Identity {
+    /// `VERID`, the version identification.
     #[doc(alias = "verid")]
-    pub version_identification: u32,
+    #[must_use]
+    pub const fn version_identification(&self) -> u32 {
+        self.version_identification
+    }
+
     /// `HCON`, the hardware configuration.
     #[doc(alias = "hcon")]
-    pub hardware_configuration: u32,
+    #[must_use]
+    pub const fn hardware_configuration(&self) -> u32 {
+        self.hardware_configuration
+    }
+
     /// `USRID`, the user identification.
     #[doc(alias = "usrid")]
-    pub user_identification: u32,
+    #[must_use]
+    pub const fn user_identification(&self) -> u32 {
+        self.user_identification
+    }
+
     /// `FIFOTH` as found, whose receive watermark is `depth - 1` out of reset.
     #[doc(alias = "fifoth")]
-    pub queue_threshold: u32,
+    #[must_use]
+    pub const fn queue_threshold(&self) -> u32 {
+        self.queue_threshold
+    }
+
     /// `CDETECT` as found: bit 0 clear means a card is present.
     #[doc(alias = "cdetect")]
-    pub card_detect: u32,
+    #[must_use]
+    pub const fn card_detect(&self) -> u32 {
+        self.card_detect
+    }
+
     /// `SDMMC_CTRL` in OpenBSD and FreeBSD, the control register, as the firmware left it.
     #[doc(alias = "CTRL")]
-    pub host_control: u32,
+    #[must_use]
+    pub const fn host_control(&self) -> u32 {
+        self.host_control
+    }
+
     /// `SDMMC_PWREN` in OpenBSD and FreeBSD, the power enable register, as the firmware left it.
     #[doc(alias = "PWREN")]
-    pub power_enable: u32,
+    #[must_use]
+    pub const fn power_enable(&self) -> u32 {
+        self.power_enable
+    }
+
     /// `SDMMC_CLKDIV` in OpenBSD and FreeBSD, the clock divider register, as the firmware left it.
     #[doc(alias = "CLKDIV")]
-    pub clock_divider: u32,
+    #[must_use]
+    pub const fn clock_divider(&self) -> u32 {
+        self.clock_divider
+    }
+
     /// `SDMMC_CLKENA` in OpenBSD and FreeBSD, the clock enable register, as the firmware left it.
     #[doc(alias = "CLKENA")]
-    pub clock_enable: u32,
+    #[must_use]
+    pub const fn clock_enable(&self) -> u32 {
+        self.clock_enable
+    }
+
     /// `SDMMC_CTYPE` in OpenBSD and FreeBSD, the card type register, as the firmware left it.
     #[doc(alias = "CTYPE")]
-    pub card_type: u32,
+    #[must_use]
+    pub const fn card_type(&self) -> u32 {
+        self.card_type
+    }
 }
 
 /// How long a reset, a clock update or a command may take before the driver gives up, by default.

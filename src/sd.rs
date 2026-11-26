@@ -156,34 +156,98 @@ impl core::fmt::Display for InitializationError {
 impl core::error::Error for InitializationError {}
 
 /// A card that is selected and in the transfer state.
+///
+/// Only [`identify`] makes one, from what the card answered, so a `Card` handed to
+/// [`read_blocks`] or [`write_blocks`] always names a card that was brought up. A caller reads its
+/// values through the methods named after them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Card {
     /// Which kind.
-    pub kind: CardKind,
+    pub(crate) kind: CardKind,
     /// Its relative card address (RCA).
-    #[doc(alias = "rca")]
-    pub relative_card_address: u16,
+    pub(crate) relative_card_address: u16,
     /// The operation conditions register (OCR) it reported at power-up.
-    #[doc(alias = "ocr")]
-    pub operation_conditions: u32,
+    pub(crate) operation_conditions: u32,
     /// The raw card identification register (CID).
-    pub card_identification_raw: [u32; 4],
+    pub(crate) card_identification_raw: [u32; 4],
     /// The raw card-specific data register (CSD).
-    pub card_specific_data_raw: [u32; 4],
+    pub(crate) card_specific_data_raw: [u32; 4],
     /// The CID, decoded.
-    #[doc(alias = "cid")]
-    pub card_identification: CardIdentification,
+    pub(crate) card_identification: CardIdentification,
     /// Capacity in 512-byte blocks.
-    pub blocks: u64,
+    pub(crate) blocks: u64,
     /// Addressed in blocks (true) or bytes (false).
-    pub block_addressed: bool,
+    pub(crate) block_addressed: bool,
     /// The bus width in use.
-    pub bus_width: BusWidth,
+    pub(crate) bus_width: BusWidth,
     /// The card clock in use, in hertz.
-    pub clock_hertz: u32,
+    pub(crate) clock_hertz: u32,
 }
 
 impl Card {
+    /// Which kind.
+    #[must_use]
+    pub const fn kind(&self) -> CardKind {
+        self.kind
+    }
+
+    /// Its relative card address (RCA).
+    #[doc(alias = "rca")]
+    #[must_use]
+    pub const fn relative_card_address(&self) -> u16 {
+        self.relative_card_address
+    }
+
+    /// The operation conditions register (OCR) it reported at power-up.
+    #[doc(alias = "ocr")]
+    #[must_use]
+    pub const fn operation_conditions(&self) -> u32 {
+        self.operation_conditions
+    }
+
+    /// The raw card identification register (CID).
+    #[must_use]
+    pub const fn card_identification_raw(&self) -> [u32; 4] {
+        self.card_identification_raw
+    }
+
+    /// The raw card-specific data register (CSD).
+    #[must_use]
+    pub const fn card_specific_data_raw(&self) -> [u32; 4] {
+        self.card_specific_data_raw
+    }
+
+    /// The CID, decoded.
+    #[doc(alias = "cid")]
+    #[must_use]
+    pub const fn card_identification(&self) -> CardIdentification {
+        self.card_identification
+    }
+
+    /// Capacity in 512-byte blocks.
+    #[must_use]
+    pub const fn blocks(&self) -> u64 {
+        self.blocks
+    }
+
+    /// Addressed in blocks (true) or bytes (false).
+    #[must_use]
+    pub const fn block_addressed(&self) -> bool {
+        self.block_addressed
+    }
+
+    /// The bus width in use.
+    #[must_use]
+    pub const fn bus_width(&self) -> BusWidth {
+        self.bus_width
+    }
+
+    /// The card clock in use, in hertz.
+    #[must_use]
+    pub const fn clock_hertz(&self) -> u32 {
+        self.clock_hertz
+    }
+
     /// **The command argument that addresses block `logical_block_address`**: the block number on a
     /// block-addressed card, the block's first byte on a byte-addressed one. `None` when that
     /// number does not fit the command's 32-bit argument, so a command a caller composes for

@@ -41,8 +41,8 @@ fn every_card_kind_is_identified_and_written_and_read_back() {
         let simulator = SimulatedHostController::new(kind, 4096);
         let (mut host, _) = HostController::new(simulator, 50_000_000, None).unwrap();
         let card = sd::identify(&mut host, sd::BusWidth::Four).unwrap();
-        assert_eq!(card.kind, kind);
-        assert_eq!(card.blocks, 4096);
+        assert_eq!(card.kind(), kind);
+        assert_eq!(card.blocks(), 4096);
         let data: Vec<u8> = (0..3 * BLOCK_BYTES).map(|i| (i % 251) as u8).collect();
         sd::write_blocks(&mut host, &card, 9, &data).unwrap();
         let mut back = vec![0u8; data.len()];
@@ -117,7 +117,9 @@ fn a_standard_capacity_card_may_be_larger_than_a_few_megabytes() {
     let simulator = SimulatedHostController::new(CardKind::SdVersion2, 8192);
     let (mut host, _) = HostController::new(simulator, 50_000_000, None).unwrap();
     assert_eq!(
-        sd::identify(&mut host, sd::BusWidth::Four).unwrap().blocks,
+        sd::identify(&mut host, sd::BusWidth::Four)
+            .unwrap()
+            .blocks(),
         8192
     );
 }

@@ -145,7 +145,11 @@ impl Response {
 }
 
 /// A data phase: how many blocks of how many bytes, and which way.
+///
+/// [`Data::new`] makes one. A later release may add a field, so a caller builds one only through
+/// it; the fields stay readable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Data {
     /// Bytes per block, the `BLKSIZ` value. 512 for every block transfer this driver makes.
     #[doc(alias = "block size")]
@@ -157,6 +161,25 @@ pub struct Data {
 }
 
 impl Data {
+    /// **A data phase** of `blocks` blocks of `block_bytes` bytes each, written to the card when
+    /// `is_write` is true and read from it otherwise.
+    ///
+    /// ```
+    /// use designware_mobile_storage::command::{Command, Data, READ_SINGLE_BLOCK, Response};
+    ///
+    /// // Block 8 of a block-addressed card.
+    /// let read = Command::with_data(READ_SINGLE_BLOCK, 8, Response::R1, Data::new(512, 1, false));
+    /// assert_eq!(read.data.map(|data| data.blocks), Some(1));
+    /// ```
+    #[must_use]
+    pub const fn new(block_bytes: u32, blocks: u32, is_write: bool) -> Self {
+        Data {
+            block_bytes,
+            blocks,
+            is_write,
+        }
+    }
+
     /// Total bytes, the `BYTCNT` value. Saturating, so a hostile count cannot wrap into a small
     /// transfer; a caller asking for four gigabytes in one command is refused by [`crate::host_controller`]'s
     /// buffer check before this is ever written.
@@ -167,7 +190,11 @@ impl Data {
 }
 
 /// One command to the card.
+///
+/// [`Command::new`] and [`Command::with_data`] make one. A later release may add a field, so a
+/// caller builds one only through them; the fields stay readable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Command {
     /// The command index, 0 to 63.
     pub index: u8,

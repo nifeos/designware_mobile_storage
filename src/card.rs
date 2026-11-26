@@ -128,8 +128,12 @@ impl CardSpecificData {
 
 /// **The card identification register (CID)**, decoded to what a transcript should name: SD
 /// Physical Layer Simplified Specification section 5.2, `JESD84-B51` section 7.2 for eMMC.
+///
+/// A later release may decode more of the register, such as the manufacturing date, so the struct
+/// is not built outside this crate; its fields stay readable.
 #[doc(alias = "cid")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CardIdentification {
     /// Manufacturer identifier, bits 127:120.
     pub manufacturer: u8,

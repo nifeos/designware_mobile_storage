@@ -85,10 +85,10 @@ fuzz_target!(|data: &[u8]| {
     let Ok(card) = sd::identify(&mut host, maximum_bus_width) else {
         return;
     };
-    assert!(card.bus_width <= maximum_bus_width);
+    assert!(card.bus_width() <= maximum_bus_width);
 
     let logical_block_address = if wrap_into_card {
-        address % card.blocks.max(1)
+        address % card.blocks().max(1)
     } else {
         address
     };
