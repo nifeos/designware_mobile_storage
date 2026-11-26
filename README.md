@@ -48,7 +48,9 @@ access (DMA) region you supply. The region implements
 
 The `simulator` feature lets your own tests run against the simulated controller and card that
 this crate's tests use, the way `embedded-hal-mock` stands in for `embedded-hal`. It is off by
-default and needs `std`, so turn it on for your tests only. `SimulatedHostController` implements
+default and needs `std`, so turn it on for your tests only. It links `std` for the simulator
+alone; the driver stays `no_std` with it on, so a workspace that turns it on for one member's tests
+gives no other member a driver that quietly uses `std`. `SimulatedHostController` implements
 `RegisterWindowAndClock`, so it goes wherever your code takes a register window. Choose the card's
 kind and size, fill or check its blocks, fail the next block read, or leave the slot empty.
 `attach_direct_memory_access_region` hands back the memory its IDMAC reaches. A test of the

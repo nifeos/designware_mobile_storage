@@ -547,6 +547,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
     use std::vec::Vec;
 
     use super::*;

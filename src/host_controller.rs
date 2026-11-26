@@ -844,6 +844,8 @@ fn data_phase_failure(index: u8, raw_interrupt_status: u32, owed: u32) -> Result
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
 
     /// The `VisionFive` 2's controllers run from 50 megahertz (`assigned-clock-rates` in mainline

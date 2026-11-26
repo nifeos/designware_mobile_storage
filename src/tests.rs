@@ -1,6 +1,9 @@
 //! The crate's host tests, kept out of `lib.rs` so the crate root stays an index of its modules as
 //! the tests grow.
 
+use std::vec;
+use std::vec::Vec;
+
 use crate::card;
 use crate::host_controller::{Error, HostController};
 use crate::sd::{self, BLOCK_BYTES, BlockTransferError, InitializationError};
