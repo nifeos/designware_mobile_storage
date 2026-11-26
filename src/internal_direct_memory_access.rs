@@ -10,21 +10,17 @@
 //!
 //! # Example
 //!
-//! Hand the controller a region of memory, build the engine on it, and move blocks through it.
-//! The calls to [`identify`](crate::sd::identify), [`read_blocks`](crate::sd::read_blocks) and
-//! [`write_blocks`](crate::sd::write_blocks) are the same as without the engine. The example runs
-//! against the crate's simulator, which the `simulator` feature turns on and whose
-//! `attach_direct_memory_access_region` stands in for memory the controller reaches; on a board
-//! the region is the caller's own [`DirectMemoryAccessRegion`].
+//! Build the engine on a region of memory and move blocks through it; the calls to
+//! [`crate::sd`] are the same as without it. Here the simulator the `simulator` feature turns on
+//! stands in for the controller and its memory; on a board the region is the caller's own
+//! [`DirectMemoryAccessRegion`].
 //!
 //! ```
 //! # #[cfg(not(feature = "simulator"))] fn main() {}
 //! # #[cfg(feature = "simulator")] fn main() {
 //! use designware_mobile_storage::SimulatedHostController;
 //! use designware_mobile_storage::host_controller::HostController;
-//! use designware_mobile_storage::internal_direct_memory_access::{
-//!     InternalDirectMemoryAccess, PAGE_BYTES,
-//! };
+//! use designware_mobile_storage::internal_direct_memory_access::InternalDirectMemoryAccess;
 //! use designware_mobile_storage::sd::{self, BLOCK_BYTES, BusWidth, CardKind};
 //!
 //! let mut registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
@@ -33,13 +29,11 @@
 //! let (host, identity) = HostController::new(registers, 50_000_000, None).unwrap();
 //! let engine = InternalDirectMemoryAccess::new(region, &identity).unwrap();
 //! let mut host = host.with_internal_direct_memory_access(engine);
-//!
 //! let card = sd::identify(&mut host, BusWidth::Four).unwrap();
 //! // Four data pages hold sixteen blocks, the most one transfer moves through this region.
-//! let blocks_per_transfer = 4 * PAGE_BYTES as usize / BLOCK_BYTES;
-//! let written = vec![[0x5a; BLOCK_BYTES]; blocks_per_transfer];
+//! let written = [[0x5a; BLOCK_BYTES]; 16];
 //! sd::write_blocks(&mut host, &card, 64, &written).unwrap();
-//! let mut read = vec![[0; BLOCK_BYTES]; blocks_per_transfer];
+//! let mut read = [[0; BLOCK_BYTES]; 16];
 //! sd::read_blocks(&mut host, &card, 64, &mut read).unwrap();
 //! assert_eq!(read, written);
 //! # }

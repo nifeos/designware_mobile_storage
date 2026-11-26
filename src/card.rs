@@ -11,9 +11,8 @@
 //! # Example
 //!
 //! Name the card [`identify`](crate::sd::identify) brought up, and ask whether it is ready for
-//! data: `CMD13` answers with the R1 status word, whose error bits [`R1_ERROR_MASK`] covers.
-//! The example runs against the crate's simulator, which the `simulator` feature turns on; on a
-//! board the register window is the controller's own.
+//! data: `CMD13` answers with the R1 status word, whose error bits [`R1_ERROR_MASK`] covers. The
+//! simulator the `simulator` feature turns on stands in for the controller.
 //!
 //! ```
 //! # #[cfg(not(feature = "simulator"))] fn main() {}
@@ -27,11 +26,7 @@
 //! let registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
 //! let (mut host, _identity) = HostController::new(registers, 50_000_000, None).unwrap();
 //! let card = sd::identify(&mut host, BusWidth::Four).unwrap();
-//! let identification = card.card_identification();
-//! println!(
-//!     "manufacturer {:#04x}, serial {:#010x}",
-//!     identification.manufacturer, identification.serial
-//! );
+//! println!("manufacturer {:#04x}", card.card_identification().manufacturer);
 //!
 //! // The relative card address goes in the argument's upper half.
 //! let argument = u32::from(card.relative_card_address()) << 16;
