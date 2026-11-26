@@ -319,12 +319,27 @@ pub(crate) const RAW_INTERRUPT_DATA_ERROR_MASK: u32 = RAW_INTERRUPT_END_BIT_ERRO
     | RAW_INTERRUPT_HARDWARE_LOCKED_WRITE_ERROR
     | RAW_INTERRUPT_QUEUE_UNDERRUN_OR_OVERRUN
     | RAW_INTERRUPT_DATA_CRC_ERROR;
+// The five data errors are distinct bits (15, 13, 12, 11 and 7), which the compiler checks here;
+// the mutation exemptions for this mask name this check.
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(
+    RAW_INTERRUPT_END_BIT_ERROR
+        + RAW_INTERRUPT_START_BIT_ERROR
+        + RAW_INTERRUPT_HARDWARE_LOCKED_WRITE_ERROR
+        + RAW_INTERRUPT_QUEUE_UNDERRUN_OR_OVERRUN
+        + RAW_INTERRUPT_DATA_CRC_ERROR
+        == 0x0000_b880
+);
 /// **Data timeouts** (OpenBSD's `SDMMC_RINTSTS_DATA_TO`): every bit that means a data phase timed
 /// out.
 #[doc(alias = "data timeouts")]
 #[doc(alias = "RINTSTS_DATA_TO")]
 pub(crate) const RAW_INTERRUPT_DATA_TIMEOUT_MASK: u32 =
     RAW_INTERRUPT_HOST_TIMEOUT | RAW_INTERRUPT_DATA_READ_TIMEOUT;
+// The two data timeouts are distinct bits (10 and 9), which the compiler checks here; the
+// mutation exemption for this mask names this check.
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(RAW_INTERRUPT_HOST_TIMEOUT + RAW_INTERRUPT_DATA_READ_TIMEOUT == 0x0000_0600);
 // The data-error group and the data-timeout group share no bit with each other ({15, 13, 12, 11,
 // 7} against {10, 9}), which the compiler checks here; every masked test that composes them, and
 // the mutation exemptions that cover those tests, name this check. The constant-assertion lint
@@ -520,6 +535,15 @@ pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ERROR_MASK: u32 =
     INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_FATAL_BUS_ERROR
         | INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_DESCRIPTOR_UNAVAILABLE
         | INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_CARD_ERROR_SUMMARY;
+// The three IDMAC errors are distinct bits (2, 4 and 5), which the compiler checks here; the
+// mutation exemptions for this mask name this check.
+#[allow(clippy::assertions_on_constants, clippy::eq_op)]
+const _: () = assert!(
+    INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_FATAL_BUS_ERROR
+        + INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_DESCRIPTOR_UNAVAILABLE
+        + INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_CARD_ERROR_SUMMARY
+        == 0x0000_0034
+);
 /// Every write-one-to-clear bit of `IDSTS`, bits 9:0.
 pub(crate) const INTERNAL_DIRECT_MEMORY_ACCESS_STATUS_ALL_MASK: u32 = 0x3ff;
 /// **Internal `DMAC` Interrupt Enable Register** (Linux's `SDMMC_IDINTEN`, OpenBSD's
