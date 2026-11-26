@@ -7,9 +7,9 @@ Expected to fail: `assert!(model.block_bytes_set)`.
 diff --git a/src/sd.rs b/src/sd.rs
 --- a/src/sd.rs
 +++ b/src/sd.rs
-@@ -384,14 +384,6 @@
+@@ -545,14 +545,6 @@
          host.set_bus_width(4);
-         card.bus_width = 4;
+         card.bus_width = BusWidth::Four;
      }
 -    let r1 = host
 -        .send_command(&Command::new(
