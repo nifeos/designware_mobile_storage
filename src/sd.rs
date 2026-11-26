@@ -559,20 +559,23 @@ fn check(
         return Err(BlockTransferError::Length);
     }
     let blocks = (len / BLOCK_BYTES) as u64;
-    if blocks > u64::from(u32::MAX) / BLOCK_BYTES as u64
-        || !can_address_blocks(
-            card.blocks,
-            card.block_addressed,
-            logical_block_address,
-            blocks,
-        )
-    {
-        return Err(BlockTransferError::Range);
+    // One refusal for both tests. A range `can_address_blocks` admits starts below 2^32 blocks
+    // on a block-addressed card and below 2^23 on a byte-addressed one, so its argument always
+    // fits; `an_admitted_range_is_inside_the_card_and_the_command_argument` proves the bound.
+    match card.block_address_argument(logical_block_address) {
+        Some(argument)
+            if blocks <= u64::from(u32::MAX) / BLOCK_BYTES as u64
+                && can_address_blocks(
+                    card.blocks,
+                    card.block_addressed,
+                    logical_block_address,
+                    blocks,
+                ) =>
+        {
+            Ok((blocks as u32, argument))
+        }
+        _ => Err(BlockTransferError::Range),
     }
-    let Some(argument) = card.block_address_argument(logical_block_address) else {
-        return Err(BlockTransferError::Range);
-    };
-    Ok((blocks as u32, argument))
 }
 
 /// **Read whole blocks from `logical_block_address` into `buffer`**, one command: `CMD17` for one
