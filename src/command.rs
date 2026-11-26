@@ -96,7 +96,11 @@ pub const SET_BUS_WIDTH: u8 = 6;
 pub const SD_SEND_OPERATION_CONDITIONS: u8 = 41;
 
 /// What comes back from the card, and so how the controller must be told to listen.
+///
+/// The kinds a memory card answers with. A later release may add others, such as an SDIO card's
+/// R4 and R5, so a `match` on it needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Response {
     /// No response (`CMD0`): nothing comes back.
     None,
