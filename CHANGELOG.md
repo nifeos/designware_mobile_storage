@@ -3,7 +3,7 @@
 Dates are UTC. One line per release, what changed and why, so a reader of the diff has the
 sentence beside it.
 
-## Unreleased
+## 0.1.0-pre.3
 
 - Breaking: the `jh7110` module and its `slot_from_node` fuzz target are gone. The crate names no
   system-on-chip; a caller decodes its own device tree and passes the input clock and queue depth
