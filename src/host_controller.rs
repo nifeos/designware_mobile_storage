@@ -975,6 +975,36 @@ mod tests {
 
     use super::*;
 
+    /// Each getter reads its own register, so no two are crossed and none reads a constant.
+    #[test]
+    fn an_identity_reads_back_each_register_it_holds() {
+        let identity = Identity {
+            version_identification: 1,
+            hardware_configuration: 2,
+            user_identification: 3,
+            queue_threshold: 4,
+            card_detect: 5,
+            host_control: 6,
+            power_enable: 7,
+            clock_divider: 8,
+            clock_enable: 9,
+            card_type: 10,
+        };
+        let read = [
+            identity.version_identification(),
+            identity.hardware_configuration(),
+            identity.user_identification(),
+            identity.queue_threshold(),
+            identity.card_detect(),
+            identity.host_control(),
+            identity.power_enable(),
+            identity.clock_divider(),
+            identity.clock_enable(),
+            identity.card_type(),
+        ];
+        assert_eq!(read, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    }
+
     /// The `VisionFive` 2's controllers run from 50 megahertz (`assigned-clock-rates` in mainline
     /// and the vendor branch head).
     #[test]

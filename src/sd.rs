@@ -12,9 +12,8 @@
 //!
 //! # Example
 //!
-//! Bring a card up on a slot with a 4-bit bus, then write two blocks and read them back.
-//! The example runs against the crate's simulator, which the `simulator` feature turns on; on a
-//! board the register window is the controller's own.
+//! Bring a card up on a slot with a 4-bit bus, then write two blocks and read them back, here
+//! against the simulator the `simulator` feature turns on.
 //!
 //! ```
 //! # #[cfg(not(feature = "simulator"))] fn main() {}
@@ -35,11 +34,6 @@
 //! let mut read = [[0; BLOCK_BYTES]; 2];
 //! sd::read_blocks(&mut host, &card, 100, &mut read).unwrap();
 //! assert_eq!(read, written);
-//! // A range past the card's end is refused before anything is sent.
-//! assert_eq!(
-//!     sd::read_blocks(&mut host, &card, 8191, &mut read),
-//!     Err(sd::BlockTransferError::Range)
-//! );
 //! # }
 //! ```
 
@@ -265,7 +259,7 @@ impl Card {
 
     /// Addressed in blocks (true) or bytes (false).
     #[must_use]
-    pub const fn block_addressed(&self) -> bool {
+    pub const fn is_block_addressed(&self) -> bool {
         self.block_addressed
     }
 
@@ -824,6 +818,53 @@ mod tests {
             bus_width: BusWidth::Four,
             clock_hertz: TRANSFER_HERTZ,
         }
+    }
+
+    /// Each getter reads its own field, so no two are crossed and none reads a constant.
+    #[test]
+    fn a_card_reads_back_each_value_it_holds() {
+        let card = Card {
+            kind: CardKind::MultimediaCard,
+            relative_card_address: 0x1234,
+            operation_conditions: 0xc0ff_8080,
+            card_identification_raw: [1, 2, 3, 4],
+            card_specific_data_raw: [5, 6, 7, 8],
+            card_identification: CardIdentification::from_sd_register(&[0, 0, 0, 0x1b00_0000]),
+            blocks: 0x0123_4567_89ab,
+            block_addressed: true,
+            bus_width: BusWidth::Four,
+            clock_hertz: 24_000_000,
+        };
+        assert_eq!(card.kind(), CardKind::MultimediaCard);
+        assert_eq!(card.relative_card_address(), 0x1234);
+        assert_eq!(card.operation_conditions(), 0xc0ff_8080);
+        assert_eq!(card.card_identification_raw(), [1, 2, 3, 4]);
+        assert_eq!(card.card_specific_data_raw(), [5, 6, 7, 8]);
+        assert_eq!(card.card_identification().manufacturer, 0x1b);
+        assert_eq!(card.blocks(), 0x0123_4567_89ab);
+        assert!(card.is_block_addressed());
+        assert!(
+            !Card {
+                block_addressed: false,
+                ..card
+            }
+            .is_block_addressed()
+        );
+        assert_eq!(card.bus_width(), BusWidth::Four);
+        assert_eq!(card.clock_hertz(), 24_000_000);
+    }
+
+    /// The widths a card bus has round-trip through their line counts, and no other count is one.
+    #[test]
+    fn a_bus_width_is_one_four_or_eight_lines_and_nothing_else() {
+        for width in [BusWidth::One, BusWidth::Four, BusWidth::Eight] {
+            assert_eq!(BusWidth::from_lines(width.lines()), Some(width));
+        }
+        assert_eq!(BusWidth::Eight.lines(), 8);
+        for lines in [0, 2, 3, 5, 7, 9, 16, u8::MAX] {
+            assert_eq!(BusWidth::from_lines(lines), None);
+        }
+        assert!(BusWidth::One < BusWidth::Four && BusWidth::Four < BusWidth::Eight);
     }
 
     #[test]

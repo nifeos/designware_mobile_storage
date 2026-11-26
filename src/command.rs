@@ -16,10 +16,8 @@
 //!
 //! # Example
 //!
-//! Compose a single-block read the way [`read_blocks`](crate::sd::read_blocks) does, and send it
-//! through the controller. The example runs against the crate's simulator, which the `simulator`
-//! feature turns on; on a board the register window is the controller's own.
-//!
+//! A single-block read composed as [`read_blocks`](crate::sd::read_blocks) composes it, sent to
+//! the simulator the `simulator` feature turns on:
 //! ```
 //! # #[cfg(not(feature = "simulator"))] fn main() {}
 //! # #[cfg(feature = "simulator")] fn main() {
@@ -32,14 +30,9 @@
 //! registers.card_blocks_mut()[9] = [0xa5; BLOCK_BYTES];
 //! let (mut host, _identity) = HostController::new(registers, 50_000_000, None).unwrap();
 //! let card = sd::identify(&mut host, BusWidth::Four).unwrap();
-//!
 //! let argument = card.block_address_argument(9).unwrap();
-//! let read = Command::with_data(
-//!     READ_SINGLE_BLOCK,
-//!     argument,
-//!     Response::R1,
-//!     Data::new(BLOCK_BYTES as u32, 1, false),
-//! );
+//! let data = Data::new(BLOCK_BYTES as u32, 1, false);
+//! let read = Command::with_data(READ_SINGLE_BLOCK, argument, Response::R1, data);
 //! let mut block = [0; BLOCK_BYTES];
 //! host.read_data(&read, &mut block).unwrap();
 //! assert_eq!(block, [0xa5; BLOCK_BYTES]);
@@ -129,8 +122,8 @@ pub const SD_SEND_OPERATION_CONDITIONS: u8 = 41;
 
 /// What comes back from the card, and so how the controller must be told to listen.
 ///
-/// The kinds a memory card answers with. A later release may add others, such as an SDIO card's
-/// R4 and R5, so a `match` on it needs a wildcard arm.
+/// The kinds a memory card answers with. A later release may add others, such as the R4 and R5
+/// of a Secure Digital Input Output (SDIO) card, so a `match` on it needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Response {
@@ -367,11 +360,8 @@ mod tests {
 
     #[test]
     fn only_a_multi_block_transfer_asks_for_the_automatic_stop() {
-        let one = Data {
-            block_bytes: 512,
-            blocks: 1,
-            is_write: false,
-        };
+        let one = Data::new(512, 1, false);
+        assert_eq!((one.block_bytes, one.blocks, one.is_write), (512, 1, false));
         let many = Data { blocks: 8, ..one };
         let r1 = Command::with_data(READ_SINGLE_BLOCK, 0, Response::R1, one).register_word();
         let r8 = Command::with_data(READ_MULTIPLE_BLOCK, 0, Response::R1, many).register_word();
