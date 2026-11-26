@@ -172,3 +172,35 @@ impl DirectMemoryAccessRegion for SimulatedDirectMemoryAccessRegion {
         self.0.barrier();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::vec;
+
+    use super::*;
+    use crate::host_controller::HostController;
+    use crate::internal_direct_memory_access::{InternalDirectMemoryAccess, PAGE_BYTES};
+    use crate::sd;
+
+    /// The region a caller is given passes each barrier the driver asks for through to the memory
+    /// the controller reaches, so a caller's test runs the driver with its memory ordering intact.
+    /// The public simulator does not report a missed barrier, so this looks at the memory itself.
+    #[test]
+    fn the_region_a_caller_is_given_orders_memory_at_each_barrier() {
+        let mut simulator = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+        let region = simulator.attach_direct_memory_access_region(u64::from(PAGE_BYTES) * 16, 4);
+        let memory = region.0.clone();
+        let (host, id) = HostController::new(simulator, 50_000_000, None).unwrap();
+        let mut host = host.with_internal_direct_memory_access(
+            InternalDirectMemoryAccess::new(region, &id).unwrap(),
+        );
+        let card = sd::identify(&mut host, 4).unwrap();
+        let data = vec![0x6d; 2 * BLOCK_BYTES];
+        sd::write_blocks(&mut host, &card, 100, &data).unwrap();
+        let mut back = vec![0u8; data.len()];
+        sd::read_blocks(&mut host, &card, 100, &mut back).unwrap();
+        assert_eq!(back, data);
+        let bus = memory.bus();
+        assert!(!bus.unfenced_start && !bus.unfenced_read);
+    }
+}

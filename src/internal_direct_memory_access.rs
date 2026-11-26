@@ -1012,6 +1012,24 @@ mod tests {
         );
     }
 
+    /// Arming the IDMAC sets its select and enable bits whatever `CONTROL_REGISTER` already
+    /// holds: a select and an enable left set (by firmware, say) stay set, and the transfer runs.
+    #[test]
+    fn a_select_and_an_enable_already_set_when_the_internal_direct_memory_access_controller_is_armed_stay_set()
+     {
+        let (h, card, memory) = polled(2);
+        let mut h = with_internal_direct_memory_access(h, &memory);
+        let control = h.registers_mut().peek(registers::CONTROL_REGISTER);
+        h.registers_mut().poke(
+            registers::CONTROL_REGISTER,
+            control
+                | registers::CONTROL_USE_INTERNAL_DIRECT_MEMORY_ACCESS_CONTROLLER
+                | registers::CONTROL_DIRECT_MEMORY_ACCESS_ENABLE,
+        );
+        let mut block = [0u8; 512];
+        sd::read_blocks(&mut h, &card, 7, &mut block).unwrap();
+    }
+
     /// A reset that never clears is reported, not assumed done, with the word that holds it:
     /// `BUS_MODE_REGISTER` when arming, and when stopping `BUS_MODE_REGISTER` or `CONTROL_REGISTER`, whichever is held.
     #[test]

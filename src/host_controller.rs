@@ -1288,6 +1288,65 @@ mod tests {
         assert_eq!(back[..], data[..]);
     }
 
+    /// Each batch of words a write moves into the FIFO is answered by clearing the transmit
+    /// request and nothing else: `RINTSTS` clears what is written to it, so clearing more would
+    /// lose a status the driver has not looked at yet, and clearing less would leave the request
+    /// standing for words already moved.
+    #[test]
+    fn a_write_clears_only_the_transmit_request_after_each_batch() {
+        let mut h = take(SimulatedHostController::new(
+            CardKind::SdHighCapacity,
+            2048,
+            32,
+        ));
+        let card = sd::identify(&mut h, 4).unwrap();
+        h.registers_mut().writes.clear();
+        sd::write_blocks(&mut h, &card, 1, &[0xa5; 1024]).unwrap();
+        // The FIFO's own writes are not recorded, so what follows the data command, up to the
+        // next command's clearing, is one clearing per batch: 256 words in batches of the depth.
+        let writes = &h.registers_mut().writes;
+        let data_command = writes
+            .iter()
+            .position(|&(offset, value)| {
+                offset == registers::COMMAND_REGISTER
+                    && value & registers::COMMAND_DATA_EXPECTED != 0
+            })
+            .unwrap();
+        let mut expected = std::vec![
+            (
+                registers::RAW_INTERRUPT_STATUS_REGISTER,
+                registers::RAW_INTERRUPT_TRANSMIT_QUEUE_DATA_REQUEST
+            );
+            8
+        ];
+        expected.push((
+            registers::RAW_INTERRUPT_STATUS_REGISTER,
+            registers::RAW_INTERRUPT_ALL_MASK,
+        ));
+        assert_eq!(writes[data_command + 1..data_command + 10], expected[..]);
+    }
+
+    /// A controller whose `STATUS` claims a full FIFO, on a card that stalls mid-read, must not be
+    /// drained on the count alone: only the receive request, or the transfer's end, says there are
+    /// words to take. A driver that read on the count would take words that never came and report
+    /// nothing owed; this one waits out the deadline owing what did not move.
+    #[test]
+    fn a_full_queue_count_without_a_request_or_the_end_moves_nothing() {
+        let mut h = take(SimulatedHostController::new(
+            CardKind::SdHighCapacity,
+            2048,
+            32,
+        ));
+        let card = sd::identify(&mut h, 4).unwrap();
+        h.registers_mut().stall_after = Some(128);
+        h.registers_mut().overreport_fill = true;
+        let mut block = [0u8; 512];
+        assert!(matches!(
+            sd::read_blocks(&mut h, &card, 1, &mut block),
+            Err(BlockTransferError::Host(Error::DataTimeout(17, _, 384)))
+        ));
+    }
+
     /// An error that ends a write's data phase is reported, and at once: not after the deadline a
     /// transfer that never ends would wait out.
     #[test]
