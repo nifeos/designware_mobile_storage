@@ -36,10 +36,6 @@ pub const ALL_SEND_CARD_IDENTIFICATION: u8 = 2;
 #[doc(alias = "relative card address")]
 #[doc(alias = "SEND_RELATIVE_ADDR")]
 pub const SEND_RELATIVE_ADDRESS: u8 = 3;
-/// **`CMD6`, switch** (`JESD84-B51`'s `SWITCH`; the SD specification's `SWITCH_FUNC`, unused here):
-/// write one byte of `EXT_CSD` on an eMMC. The response is R1b.
-#[doc(alias = "switch mode")]
-pub const SWITCH: u8 = 6;
 /// **`CMD7`, select or deselect card** (the specifications' `SELECT/DESELECT_CARD`, as OpenBSD's
 /// `MMC_SELECT_CARD` writes it): move the addressed card into the transfer state. The response is
 /// R1b.

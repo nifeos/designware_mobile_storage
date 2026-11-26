@@ -529,12 +529,13 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         }
     }
 
-    /// Send `command`, its data phase prepared first; `direct_memory_access` arms the IDMAC between
-    /// the FIFO reset and the command.
+    /// Send `command`, its data phase prepared first; a chain at the bus address
+    /// `internal_direct_memory_access_chain` arms the IDMAC on it between the FIFO reset and the
+    /// command.
     pub(crate) fn issue(
         &mut self,
         command: &Command,
-        direct_memory_access: bool,
+        internal_direct_memory_access_chain: Option<u32>,
     ) -> Result<[u32; 4], Error> {
         self.wait_not_busy()?;
         if let Some(d) = command.data {
@@ -543,8 +544,8 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
             self.registers
                 .write(registers::BLOCK_SIZE_BYTES_REGISTER, d.block_bytes);
             self.reset_queue()?;
-            if direct_memory_access {
-                self.internal_direct_memory_access_start()?;
+            if let Some(chain) = internal_direct_memory_access_chain {
+                self.internal_direct_memory_access_start(chain)?;
             }
         }
         self.start_command(command)
@@ -620,7 +621,7 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         if command.data.is_some() {
             return Err(Error::BufferSize);
         }
-        self.issue(command, false)
+        self.issue(command, None)
     }
 
     /// **Send a command whose data phase reads into `buffer`.** `buffer` must be exactly the
@@ -650,21 +651,18 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         {
             return Err(Error::BufferSize);
         }
-        if let Some(capacity) = self
-            .direct_memory_access
-            .as_ref()
-            .map(InternalDirectMemoryAccess::capacity)
-        {
-            if d.total_bytes() > capacity {
+        if let Some(result) = self.with_engine(|host, engine| {
+            if d.total_bytes() > engine.capacity() {
                 return Err(Error::BufferSize);
             }
-            let response = self.internal_direct_memory_access_transfer(command, d.total_bytes())?;
-            if let Some(direct_memory_access) = self.direct_memory_access.as_mut() {
-                direct_memory_access.region().read_bytes(PAGE_BYTES, buffer);
-            }
-            return Ok(response);
+            let response =
+                host.internal_direct_memory_access_transfer(engine, command, d.total_bytes())?;
+            engine.region().read_bytes(PAGE_BYTES, buffer);
+            Ok(response)
+        }) {
+            return result;
         }
-        let response = self.issue(command, false)?;
+        let response = self.issue(command, None)?;
         let mut done = 0usize;
         while done < buffer.len() {
             let (status, raw_interrupt_status) = self.wait_queue(
@@ -709,18 +707,19 @@ impl<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion> HostController<R, D
         {
             return Err(Error::BufferSize);
         }
-        if let Some(direct_memory_access) = self.direct_memory_access.as_mut() {
-            if d.total_bytes() > direct_memory_access.capacity() {
+        if let Some(result) = self.with_engine(|host, engine| {
+            if d.total_bytes() > engine.capacity() {
                 return Err(Error::BufferSize);
             }
-            direct_memory_access
-                .region()
-                .write_bytes(PAGE_BYTES, buffer);
-            let response = self.internal_direct_memory_access_transfer(command, d.total_bytes())?;
-            self.wait_not_busy()?;
-            return Ok(response);
+            engine.region().write_bytes(PAGE_BYTES, buffer);
+            let response =
+                host.internal_direct_memory_access_transfer(engine, command, d.total_bytes())?;
+            host.wait_not_busy()?;
+            Ok(response)
+        }) {
+            return result;
         }
-        let response = self.issue(command, false)?;
+        let response = self.issue(command, None)?;
         let mut done = 0usize;
         while done < buffer.len() {
             let (status, raw_interrupt_status) = self.wait_queue(

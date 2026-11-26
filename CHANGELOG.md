@@ -11,6 +11,12 @@ sentence beside it.
 - Breaking: the `partition` module (`MasterBootRecord`, `PartitionEntry`) is gone, with its two
   harnesses and its fuzz target. Parsing a partition table is not a controller's job, and other
   block drivers need it without this crate; it moves to a partition-table crate of its own.
+- Breaking: the eMMC switch path is gone: `sd::switch_multimedia_card_bus_width`,
+  `sd::switch_multimedia_card_to_high_speed`, `sd::MultimediaCardSwitchError`, `command::SWITCH`,
+  `card::r1_state` and `card::R1_STATE_TRANSFER`, with their two harnesses and the simulated
+  card's `CMD6`. It had never run on an eMMC and nothing called it; a public item is easier to add
+  once a board has run it than to take back. An eMMC runs on a 1-bit bus at 25 megahertz, as `identify`
+  leaves it.
 
 ## 0.1.0-pre.2
 
