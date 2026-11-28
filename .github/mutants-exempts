@@ -16,35 +16,35 @@ src/registers.rs:564 # `1 >> 0` is `1 << 0`, both 1
 
 # Identity: `|` and `^` agree on operands that share no bit, and the operands here are literal
 # shifts whose bits can be read off the line.
-src/card.rs:22 # `1 << 20` and `1 << 21` share no bit, so `^` is `|`
-src/card.rs:26 # high capacity is `1 << 30` and the voltage window `1 << 20` and `1 << 21`, so `^` is `|`
-src/simulator.rs:445 # `state << 9` has bits 8:0 clear, so `^ (1 << 8)` is `| (1 << 8)`
-src/simulator.rs:446 # `^` binds tighter than `|`: `(1 << 8) ^ (1 << 5 or 0)` is `(1 << 8) | (1 << 5 or 0)`
-src/simulator.rs:550 # a value shifted left by 16 has bits 15:0 clear, so `^ 0x0500` is `| 0x0500`
+src/card.rs:52 # `1 << 20` and `1 << 21` share no bit, so `^` is `|`
+src/card.rs:56 # high capacity is `1 << 30` and the voltage window `1 << 20` and `1 << 21`, so `^` is `|`
+src/simulator.rs:446 # `state << 9` has bits 8:0 clear, so `^ (1 << 8)` is `| (1 << 8)`
+src/simulator.rs:447 # `^` binds tighter than `|`: `(1 << 8) ^ (1 << 5 or 0)` is `(1 << 8) | (1 << 5 or 0)`
+src/simulator.rs:551 # a value shifted left by 16 has bits 15:0 clear, so `^ 0x0500` is `| 0x0500`
 
 # Equivalent: `|` and `^` agree on operands that share no bit, and a compile-time assertion next to
 # each group of constants checks that they share none (their sum equals their union).
-src/command.rs:205 # start, hold and the index share no bit: the assertion after UPDATE_CLOCK
-src/command.rs:206 # start, hold and the index share no bit: the assertion after UPDATE_CLOCK
-src/command.rs:239 # start, wait-previous and update-clock share no bit: the assertion below the constant
-src/command.rs:240 # start, wait-previous and update-clock share no bit: the assertion below the constant
-src/host_controller.rs:395 # IDMAC select, DMA enable and interrupt enable share no bit: the assertion in registers.rs
-src/host_controller.rs:396 # IDMAC select, DMA enable and interrupt enable share no bit: the assertion in registers.rs
-src/host_controller.rs:500 # card clock enable and low power share no bit: the assertion in registers.rs
-src/host_controller.rs:598 # the response CRC and response error bits share no bit: the assertion in registers.rs
-src/host_controller.rs:757 # the data error and data timeout masks share no bit: the assertion in registers.rs
-src/host_controller.rs:782 # transfer-over and automatic-command-done share no bit: the assertion in registers.rs
-src/host_controller.rs:791 # the data error and data timeout masks share no bit: the assertion in registers.rs
-src/internal_direct_memory_access.rs:310 # owned and chained share no bit: the assertion after the descriptor bits
-src/internal_direct_memory_access.rs:415 # `^` binds tighter than `|`, and IDMAC select and DMA enable share no bit: the assertion in registers.rs
-src/internal_direct_memory_access.rs:420 # IDMAC enable and fixed burst share no bit: the assertion in registers.rs
-src/internal_direct_memory_access.rs:440 # transfer-over and automatic-command-done share no bit: the assertion in registers.rs
-src/internal_direct_memory_access.rs:508 # the four stop bits share no bit: the assertion after the descriptor assertion
-src/internal_direct_memory_access.rs:509 # the four stop bits share no bit: the assertion after the descriptor assertion
-src/internal_direct_memory_access.rs:514 # `control` has both resets masked out just above, and they share no bit, so `^` sets them as `|` does
-src/internal_direct_memory_access.rs:515 # `^` binds tighter than `|`, and the two resets share no bit: the assertion in registers.rs
-src/internal_direct_memory_access.rs:519 # the two resets share no bit: the assertion in registers.rs
-src/internal_direct_memory_access.rs:536 # the two resets share no bit: the assertion in registers.rs
+src/command.rs:261 # start, hold and the index share no bit: the assertion after UPDATE_CLOCK
+src/command.rs:262 # start, hold and the index share no bit: the assertion after UPDATE_CLOCK
+src/command.rs:295 # start, wait-previous and update-clock share no bit: the assertion below the constant
+src/command.rs:296 # start, wait-previous and update-clock share no bit: the assertion below the constant
+src/host_controller.rs:522 # IDMAC select, DMA enable and interrupt enable share no bit: the assertion in registers.rs
+src/host_controller.rs:523 # IDMAC select, DMA enable and interrupt enable share no bit: the assertion in registers.rs
+src/host_controller.rs:627 # card clock enable and low power share no bit: the assertion in registers.rs
+src/host_controller.rs:725 # the response CRC and response error bits share no bit: the assertion in registers.rs
+src/host_controller.rs:884 # the data error and data timeout masks share no bit: the assertion in registers.rs
+src/host_controller.rs:909 # transfer-over and automatic-command-done share no bit: the assertion in registers.rs
+src/host_controller.rs:918 # the data error and data timeout masks share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:355 # owned and chained share no bit: the assertion after the descriptor bits
+src/internal_direct_memory_access.rs:460 # `^` binds tighter than `|`, and IDMAC select and DMA enable share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:465 # IDMAC enable and fixed burst share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:485 # transfer-over and automatic-command-done share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:553 # the four stop bits share no bit: the assertion after the descriptor assertion
+src/internal_direct_memory_access.rs:554 # the four stop bits share no bit: the assertion after the descriptor assertion
+src/internal_direct_memory_access.rs:559 # `control` has both resets masked out just above, and they share no bit, so `^` sets them as `|` does
+src/internal_direct_memory_access.rs:560 # `^` binds tighter than `|`, and the two resets share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:564 # the two resets share no bit: the assertion in registers.rs
+src/internal_direct_memory_access.rs:581 # the two resets share no bit: the assertion in registers.rs
 src/registers.rs:41 # the controller, queue and DMA resets share no bit: the assertion below the mask
 src/registers.rs:318 # the five data errors share no bit: the assertion below the mask
 src/registers.rs:319 # the five data errors share no bit: the assertion below the mask
@@ -55,34 +55,34 @@ src/registers.rs:392 # the three FIFOTH fields share no bit: the assertion above
 src/registers.rs:418 # the three FIFOTH fields share no bit: the assertion above the function
 src/registers.rs:536 # the three IDMAC errors share no bit: the assertion below the mask
 src/registers.rs:537 # the three IDMAC errors share no bit: the assertion below the mask
-src/simulator.rs:752 # FRUN and DTO share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
-src/simulator.rs:759 # DCRC and DTO share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
-src/simulator.rs:766 # DRTO and DTO share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
-src/simulator.rs:797 # IDMAC select and DMA enable share no bit: the assertion in registers.rs
-src/simulator.rs:859 # DU and AIS share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
-src/simulator.rs:896 # RI or TI and NIS share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
-src/simulator.rs:937 # FBE and AIS share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:753 # FRUN and DTO share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:760 # DCRC and DTO share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:767 # DRTO and DTO share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:798 # IDMAC select and DMA enable share no bit: the assertion in registers.rs
+src/simulator.rs:860 # DU and AIS share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:897 # RI or TI and NIS share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
+src/simulator.rs:938 # FBE and AIS share no bit: the assertions after SIMULATED_HARDWARE_CONFIGURATION
 
 # Identity: the stop masks four bits out of `control` and then sets the two resets, so a mask that
 # keeps a reset in `control` leaves a bit that the next line sets anyway. `^` and `&` bind tighter
 # than `|`, so each mutant changes only the last term.
-src/internal_direct_memory_access.rs:510 # `RESET ^ QUEUE_RESET` is their union and `RESET & QUEUE_RESET` is 0, and a reset kept in `control` is set again on the next line
+src/internal_direct_memory_access.rs:555 # `RESET ^ QUEUE_RESET` is their union and `RESET & QUEUE_RESET` is 0, and a reset kept in `control` is set again on the next line
 
 # Equivalent: the two comparisons differ only where both branches give the same value.
-src/card.rs:52 # a width of exactly 32 is clamped to 32 either way
-src/card.rs:59 # at `shift + width == 32` the next word's bits land at bit `width` and up, which the mask clears
-src/host_controller.rs:238 # a queue count equal to the depth is clamped to the depth either way
-src/host_controller.rs:245 # at `bytes == remaining` both branches return the same number
+src/card.rs:82 # a width of exactly 32 is clamped to 32 either way
+src/card.rs:89 # at `shift + width == 32` the next word's bits land at bit `width` and up, which the mask clears
+src/host_controller.rs:331 # a queue count equal to the depth is clamped to the depth either way
+src/host_controller.rs:338 # at `bytes == remaining` both branches return the same number
 
 # Unreachable: `NoDirectMemoryAccess` is uninhabited, so no value exists to call these on.
-src/internal_direct_memory_access.rs:70 # a method of an uninhabited type is never called
-src/internal_direct_memory_access.rs:73 # a method of an uninhabited type is never called
-src/internal_direct_memory_access.rs:76 # a method of an uninhabited type is never called
-src/internal_direct_memory_access.rs:79 # a method of an uninhabited type is never called
-src/internal_direct_memory_access.rs:82 # a method of an uninhabited type is never called
-src/internal_direct_memory_access.rs:85 # a method of an uninhabited type is never called
-src/internal_direct_memory_access.rs:88 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:101 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:104 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:107 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:110 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:113 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:116 # a method of an uninhabited type is never called
+src/internal_direct_memory_access.rs:119 # a method of an uninhabited type is never called
 
 # Harness only: the read count bounds a runaway driver and holds no answer, so a count that never
 # grows changes no test that passes.
-src/simulator.rs:975 # `reads *= 1` keeps the count at 0, which only removes the bound a passing test never reaches
+src/simulator.rs:976 # `reads *= 1` keeps the count at 0, which only removes the bound a passing test never reaches
