@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   weekly:
-    uses: partsfoundry/crate-workflows/.github/workflows/weekly.yml@eef0a564a45656471bedcb93e4789f507387bc89
+    uses: partsfoundry/crate-workflows/.github/workflows/weekly.yml@6788a79d591e27062653d33ee4ffd51e0b8f6de2
     with:
       # The bare-metal targets ci.yml names, so drift and msrv build them too.
       targets: aarch64-unknown-none-softfloat riscv64imac-unknown-none-elf x86_64-unknown-none

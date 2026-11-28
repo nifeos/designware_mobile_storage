@@ -14,12 +14,15 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: partsfoundry/crate-workflows/.github/workflows/check.yml@eef0a564a45656471bedcb93e4789f507387bc89
+    uses: partsfoundry/crate-workflows/.github/workflows/check.yml@6788a79d591e27062653d33ee4ffd51e0b8f6de2
     with:
       # Bare-metal targets the crate builds for, space-separated; empty for a host-only crate.
       targets: aarch64-unknown-none-softfloat riscv64imac-unknown-none-elf x86_64-unknown-none
       # The soak publishes nothing, so the manifest carries publish = false on purpose.
       allow-unpublished: true
+      # The simulator feature links std, which the bare-metal targets lack, so the all-features
+      # clippy pass leaves it out; the simulator job below lints and tests it on the host.
+      exclude-features: simulator
   # The shared check job builds and tests the default features only. The `simulator` feature
   # exports the simulated controller and card, so it gets the same lint and the same tests, plus
   # tests/simulator.rs, which uses it from outside the crate as a caller would.
