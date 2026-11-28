@@ -11,7 +11,7 @@ permissions:
   contents: read
 jobs:
   proofs:
-    uses: partsfoundry/crate-workflows/.github/workflows/proofs.yml@1e0c8988d43817a1ca1d8ced76ee048edb0a8aed
+    uses: partsfoundry/crate-workflows/.github/workflows/proofs.yml@6788a79d591e27062653d33ee4ffd51e0b8f6de2
     with:
       # Two harnesses at a time keep the proofs inside the job's budget. The heaviest harness
       # peaks near 6 GB, so two fit a hosted runner's 16 GB. Kani verifies in parallel only with
