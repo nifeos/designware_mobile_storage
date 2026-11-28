@@ -35,10 +35,10 @@ use designware_mobile_storage::sd;
 
 fn first_sector<R: RegisterWindowAndClock>(registers: R) -> Option<[u8; 512]> {
     let (mut host, _id) = HostController::new(registers, 50_000_000, Some(32)).ok()?;
-    let card = sd::identify(&mut host, 4).ok()?; // at most a 4-bit bus
-    let mut buffer = [0u8; 512];
-    sd::read_blocks(&mut host, &card, 0, &mut buffer).ok()?;
-    Some(buffer)
+    let card = sd::identify(&mut host, sd::BusWidth::Four).ok()?; // at most a 4-bit bus
+    let mut blocks = [[0u8; 512]; 1];
+    sd::read_blocks(&mut host, &card, 0, &mut blocks).ok()?;
+    Some(blocks[0])
 }
 ```
 
@@ -48,7 +48,9 @@ access (DMA) region you supply. The region implements
 
 The `simulator` feature lets your own tests run against the simulated controller and card that
 this crate's tests use, the way `embedded-hal-mock` stands in for `embedded-hal`. It is off by
-default and needs `std`, so turn it on for your tests only. `SimulatedHostController` implements
+default and needs `std`, so turn it on for your tests only. It links `std` for the simulator
+alone; the driver stays `no_std` with it on, so a workspace that turns it on for one member gives
+no other member a driver that quietly uses `std`. `SimulatedHostController` implements
 `RegisterWindowAndClock`, so it goes wherever your code takes a register window. Choose the card's
 kind and size, fill or check its blocks, fail the next block read, or leave the slot empty.
 `attach_direct_memory_access_region` hands back the memory its IDMAC reaches. A test of the
@@ -191,7 +193,7 @@ The proofs need Kani, which `rustup` does not install. Run `cargo install --lock
 --version 0.68.0`, then `cargo kani setup`. The setup step downloads a model checker, so it needs
 network access. CI uses version 0.68.0, and another version may verify differently.
 
-Then `cargo kani`, from the crate's directory, runs all twenty-four harnesses one at a time. That
+Then `cargo kani`, from the crate's directory, runs all twenty-two harnesses one at a time. That
 took 29 minutes on an `x86_64` Linux machine with 80 threads. The slowest harness took about 240
 seconds and the next two about 210 each. The heaviest peaks near 3.5 gigabytes of resident memory
 (6 gigabytes counting the file cache of the whole run). CI runs
@@ -218,7 +220,7 @@ A passing run prints several things that look alarming. All of them are expected
 - Source paths under `/home/runner/.rustup`, a directory that does not exist on your machine. They
   come from the toolchain Kani ships.
 
-Trust the last line of the run: `Complete - 24 successfully verified harnesses, 0 failures, 24 total.`
+Trust the last line of the run: `Complete - 22 successfully verified harnesses, 0 failures, 22 total.`
 
 ### Running one falsification patch
 

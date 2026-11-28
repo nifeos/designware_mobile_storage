@@ -3,6 +3,7 @@
 //! card state, hold the FIFO to its depth, or stop the IDMAC where a test asked it to. A caller's
 //! test relies on each of those to catch a driver bug, so each is checked here.
 
+use std::vec;
 use std::vec::Vec;
 
 use super::*;

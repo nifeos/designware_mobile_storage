@@ -9,6 +9,33 @@
 //! tells it from an SD 1.x card and brings it up with `CMD1`. The clock then goes from 400 kHz to
 //! 25 megahertz, default speed; high speed and UHS are not attempted, and an eMMC's bus stays 1-bit.
 //! Every step's failure names the step, so a board transcript that stops says where.
+//!
+//! # Example
+//!
+//! Bring a card up on a slot with a 4-bit bus, then write two blocks and read them back, here
+//! against the simulator the `simulator` feature turns on.
+//!
+//! ```
+//! # #[cfg(not(feature = "simulator"))] fn main() {}
+//! # #[cfg(feature = "simulator")] fn main() {
+//! use designware_mobile_storage::SimulatedHostController;
+//! use designware_mobile_storage::host_controller::HostController;
+//! use designware_mobile_storage::sd::{self, BLOCK_BYTES, BusWidth, CardKind};
+//!
+//! let registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+//! let (mut host, _identity) = HostController::new(registers, 50_000_000, None).unwrap();
+//! let card = sd::identify(&mut host, BusWidth::Four).unwrap();
+//! assert_eq!(card.kind(), CardKind::SdHighCapacity);
+//! assert_eq!(card.blocks(), 8192);
+//! assert_eq!(card.bus_width(), BusWidth::Four);
+//!
+//! let written = [[0x11; BLOCK_BYTES], [0x22; BLOCK_BYTES]];
+//! sd::write_blocks(&mut host, &card, 100, &written).unwrap();
+//! let mut read = [[0; BLOCK_BYTES]; 2];
+//! sd::read_blocks(&mut host, &card, 100, &mut read).unwrap();
+//! assert_eq!(read, written);
+//! # }
+//! ```
 
 use crate::card::{
     self, CardIdentification, CardSpecificData, INTERFACE_CONDITION_ARGUMENT,
@@ -48,6 +75,59 @@ pub enum CardKind {
     /// says sector mode.
     #[doc(alias = "mmc")]
     MultimediaCard,
+}
+
+/// **The width of the data bus**, in data lines.
+///
+/// A slot's widest bus, as its device tree's `bus-width` gives it, is what [`identify`] takes, and
+/// the width a card was brought up at is what [`Card`] reports. Today the driver sets one or four
+/// lines: an SD card goes to four when the slot allows four or eight, and an eMMC stays at one.
+/// [`BusWidth::Eight`] is accepted as a slot's widest bus so a caller can pass the tree's value
+/// as it is, and a later release may set it. A later release may add widths, so a `match` on it
+/// needs a wildcard arm.
+///
+/// ```
+/// use designware_mobile_storage::sd::BusWidth;
+///
+/// // A device tree's `bus-width` property, as a number.
+/// let slot = BusWidth::from_lines(8).unwrap();
+/// assert_eq!(slot, BusWidth::Eight);
+/// assert_eq!(slot.lines(), 8);
+/// assert!(BusWidth::Four < slot);
+/// assert_eq!(BusWidth::from_lines(2), None);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum BusWidth {
+    /// One data line, `DAT0`: every card's width at identification.
+    One,
+    /// Four data lines, `DAT0` to `DAT3`.
+    Four,
+    /// Eight data lines, an eMMC's widest. Accepted as a slot's widest bus; not set today.
+    Eight,
+}
+
+impl BusWidth {
+    /// How many data lines.
+    #[must_use]
+    pub const fn lines(self) -> u8 {
+        match self {
+            BusWidth::One => 1,
+            BusWidth::Four => 4,
+            BusWidth::Eight => 8,
+        }
+    }
+
+    /// The width of `lines` data lines, or `None` for a count no card bus has.
+    #[must_use]
+    pub const fn from_lines(lines: u8) -> Option<BusWidth> {
+        match lines {
+            1 => Some(BusWidth::One),
+            4 => Some(BusWidth::Four),
+            8 => Some(BusWidth::Eight),
+            _ => None,
+        }
+    }
 }
 
 /// Which step of identification failed, and how.
@@ -103,34 +183,98 @@ impl core::fmt::Display for InitializationError {
 impl core::error::Error for InitializationError {}
 
 /// A card that is selected and in the transfer state.
+///
+/// Only [`identify`] makes one, from what the card answered, so a `Card` handed to
+/// [`read_blocks`] or [`write_blocks`] always names a card that was brought up. A caller reads its
+/// values through the methods named after them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Card {
     /// Which kind.
-    pub kind: CardKind,
+    pub(crate) kind: CardKind,
     /// Its relative card address (RCA).
-    #[doc(alias = "rca")]
-    pub relative_card_address: u16,
+    pub(crate) relative_card_address: u16,
     /// The operation conditions register (OCR) it reported at power-up.
-    #[doc(alias = "ocr")]
-    pub operation_conditions: u32,
+    pub(crate) operation_conditions: u32,
     /// The raw card identification register (CID).
-    pub card_identification_raw: [u32; 4],
+    pub(crate) card_identification_raw: [u32; 4],
     /// The raw card-specific data register (CSD).
-    pub card_specific_data_raw: [u32; 4],
+    pub(crate) card_specific_data_raw: [u32; 4],
     /// The CID, decoded.
-    #[doc(alias = "cid")]
-    pub card_identification: CardIdentification,
+    pub(crate) card_identification: CardIdentification,
     /// Capacity in 512-byte blocks.
-    pub blocks: u64,
+    pub(crate) blocks: u64,
     /// Addressed in blocks (true) or bytes (false).
-    pub block_addressed: bool,
+    pub(crate) block_addressed: bool,
     /// The bus width in use.
-    pub bus_width: u8,
+    pub(crate) bus_width: BusWidth,
     /// The card clock in use, in hertz.
-    pub clock_hertz: u32,
+    pub(crate) clock_hertz: u32,
 }
 
 impl Card {
+    /// Which kind.
+    #[must_use]
+    pub const fn kind(&self) -> CardKind {
+        self.kind
+    }
+
+    /// Its relative card address (RCA).
+    #[doc(alias = "rca")]
+    #[must_use]
+    pub const fn relative_card_address(&self) -> u16 {
+        self.relative_card_address
+    }
+
+    /// The operation conditions register (OCR) it reported at power-up.
+    #[doc(alias = "ocr")]
+    #[must_use]
+    pub const fn operation_conditions(&self) -> u32 {
+        self.operation_conditions
+    }
+
+    /// The raw card identification register (CID).
+    #[must_use]
+    pub const fn card_identification_raw(&self) -> [u32; 4] {
+        self.card_identification_raw
+    }
+
+    /// The raw card-specific data register (CSD).
+    #[must_use]
+    pub const fn card_specific_data_raw(&self) -> [u32; 4] {
+        self.card_specific_data_raw
+    }
+
+    /// The CID, decoded.
+    #[doc(alias = "cid")]
+    #[must_use]
+    pub const fn card_identification(&self) -> CardIdentification {
+        self.card_identification
+    }
+
+    /// Capacity in 512-byte blocks.
+    #[must_use]
+    pub const fn blocks(&self) -> u64 {
+        self.blocks
+    }
+
+    /// Addressed in blocks (true) or bytes (false).
+    #[must_use]
+    pub const fn is_block_addressed(&self) -> bool {
+        self.block_addressed
+    }
+
+    /// The bus width in use.
+    #[must_use]
+    pub const fn bus_width(&self) -> BusWidth {
+        self.bus_width
+    }
+
+    /// The card clock in use, in hertz.
+    #[must_use]
+    pub const fn clock_hertz(&self) -> u32 {
+        self.clock_hertz
+    }
+
     /// **The command argument that addresses block `logical_block_address`**: the block number on a
     /// block-addressed card, the block's first byte on a byte-addressed one. `None` when that
     /// number does not fit the command's 32-bit argument, so a command a caller composes for
@@ -167,15 +311,17 @@ fn r1_ok(index: u8, r1: u32) -> Result<(), InitializationError> {
 }
 
 /// **Bring up whatever card is in the slot** and leave it selected, in the transfer state, at
-/// default speed, 25 megahertz. `maximum_bus_width` is the tree's `bus-width` for the slot (4 on the `VisionFive` 2's SD
-/// slot, 8 on its eMMC slot).
+/// default speed, 25 megahertz. `maximum_bus_width` is the slot's widest bus, the tree's
+/// `bus-width` for it ([`BusWidth::Four`] on the `VisionFive` 2's SD slot, [`BusWidth::Eight`] on
+/// its eMMC slot). An SD card goes to four lines when the slot allows four or more, and an eMMC
+/// stays at one; see [`BusWidth`].
 ///
 /// # Errors
 ///
 /// The step that failed; see [`InitializationError`].
 pub fn identify<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
     host: &mut HostController<R, D>,
-    maximum_bus_width: u8,
+    maximum_bus_width: BusWidth,
 ) -> Result<Card, InitializationError> {
     let is_version_2_or_later = go_idle_and_check_interface(host)?;
     let (kind, operation_conditions) = power_up(host, is_version_2_or_later)?;
@@ -201,7 +347,7 @@ pub fn identify<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
             }
             _ => false,
         },
-        bus_width: 1,
+        bus_width: BusWidth::One,
         clock_hertz: 0,
     };
 
@@ -383,21 +529,21 @@ pub(crate) fn configure_sd<R: RegisterWindowAndClock, D: DirectMemoryAccessRegio
     host: &mut HostController<R, D>,
     card: &mut Card,
     card_specific_data_raw: &[u32; 4],
-    maximum_bus_width: u8,
+    maximum_bus_width: BusWidth,
 ) -> Result<(), InitializationError> {
     let card_specific_data = CardSpecificData::from_sd_register(card_specific_data_raw);
     if card_specific_data.blocks == 0 {
         return Err(InitializationError::Capacity(card_specific_data.structure));
     }
     card.blocks = card_specific_data.blocks;
-    if maximum_bus_width >= 4 {
+    if maximum_bus_width >= BusWidth::Four {
         application_command(host, card)?;
         let r1 = host
             .send_command(&Command::new(command::SET_BUS_WIDTH, 2, Response::R1))
             .map_err(|e| InitializationError::Configure(command::SET_BUS_WIDTH, e))?;
         r1_ok(command::SET_BUS_WIDTH, r1[0])?;
         host.set_bus_width(4);
-        card.bus_width = 4;
+        card.bus_width = BusWidth::Four;
     }
     let r1 = host
         .send_command(&Command::new(
@@ -485,9 +631,8 @@ fn multimedia_card_power_up<R: RegisterWindowAndClock, D: DirectMemoryAccessRegi
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BlockTransferError {
-    /// The buffer is empty or not a whole number of blocks.
-    Length,
-    /// The range runs past the card's end (or past what a 32-bit address reaches).
+    /// The buffer holds no block, or the range runs past the card's end (or past what a 32-bit
+    /// address reaches).
     Range,
     /// The controller or the card failed.
     Host(Error),
@@ -498,8 +643,9 @@ pub enum BlockTransferError {
 impl core::fmt::Display for BlockTransferError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Length => f.write_str("the buffer is empty or not a whole number of blocks"),
-            Self::Range => f.write_str("the block range runs past what the card can address"),
+            Self::Range => f.write_str(
+                "the buffer holds no block, or the block range runs past what the card can address",
+            ),
             Self::Host(e) => write!(f, "the transfer failed: {e}"),
             Self::Status(status) => write!(f, "the card reported an error (status {status:#x})"),
         }
@@ -551,14 +697,12 @@ fn data_command(argument: u32, blocks: u32, write: bool) -> Command {
 
 /// The block count and the address argument of a transfer of `len` bytes, once both are admitted.
 fn check(
-    len: usize,
+    count: usize,
     card: &Card,
     logical_block_address: u64,
 ) -> Result<(u32, u32), BlockTransferError> {
-    if len == 0 || !len.is_multiple_of(BLOCK_BYTES) {
-        return Err(BlockTransferError::Length);
-    }
-    let blocks = (len / BLOCK_BYTES) as u64;
+    // An empty buffer is refused here too: `can_address_blocks` admits no range of zero blocks.
+    let blocks = count as u64;
     // One refusal for both tests. A range `can_address_blocks` admits starts below 2^32 blocks
     // on a block-addressed card and below 2^23 on a byte-addressed one, so its argument always
     // fits; `an_admitted_range_is_inside_the_card_and_the_command_argument` proves the bound.
@@ -581,19 +725,41 @@ fn check(
 /// **Read whole blocks from `logical_block_address` into `buffer`**, one command: `CMD17` for one
 /// block, `CMD18` with the automatic stop for more.
 ///
+/// The buffer is a slice of blocks, so it always holds a whole number of them. A caller with
+/// bytes takes the blocks out of them with [`slice::as_chunks_mut`]:
+///
+/// ```
+/// # #[cfg(not(feature = "simulator"))] fn main() {}
+/// # #[cfg(feature = "simulator")] fn main() {
+/// # use designware_mobile_storage::{SimulatedHostController, host_controller::HostController};
+/// use designware_mobile_storage::sd::{self, BLOCK_BYTES, BusWidth, CardKind};
+///
+/// # let simulator = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+/// # let (mut host, _identity) = HostController::new(simulator, 50_000_000, None).unwrap();
+/// let card = sd::identify(&mut host, BusWidth::Four).unwrap();
+/// let mut bytes = [0u8; 4 * BLOCK_BYTES];
+/// let (blocks, rest) = bytes.as_chunks_mut::<BLOCK_BYTES>();
+/// assert!(rest.is_empty());
+/// sd::read_blocks(&mut host, &card, 8, blocks).unwrap();
+/// # }
+/// ```
+///
 /// # Errors
 ///
-/// [`BlockTransferError::Length`] or [`BlockTransferError::Range`] before anything is sent; otherwise what the
-/// controller or the card reported.
+/// [`BlockTransferError::Range`] before anything is sent; otherwise what the controller or the
+/// card reported.
 pub fn read_blocks<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
     host: &mut HostController<R, D>,
     card: &Card,
     logical_block_address: u64,
-    buffer: &mut [u8],
+    buffer: &mut [[u8; BLOCK_BYTES]],
 ) -> Result<(), BlockTransferError> {
     let (blocks, argument) = check(buffer.len(), card, logical_block_address)?;
     let r1 = host
-        .read_data(&data_command(argument, blocks, false), buffer)
+        .read_data(
+            &data_command(argument, blocks, false),
+            buffer.as_flattened_mut(),
+        )
         .map_err(BlockTransferError::Host)?;
     if r1[0] & R1_ERROR_MASK != 0 {
         return Err(BlockTransferError::Status(r1[0]));
@@ -611,11 +777,11 @@ pub fn write_blocks<R: RegisterWindowAndClock, D: DirectMemoryAccessRegion>(
     host: &mut HostController<R, D>,
     card: &Card,
     logical_block_address: u64,
-    buffer: &[u8],
+    buffer: &[[u8; BLOCK_BYTES]],
 ) -> Result<(), BlockTransferError> {
     let (blocks, argument) = check(buffer.len(), card, logical_block_address)?;
     let r1 = host
-        .write_data(&data_command(argument, blocks, true), buffer)
+        .write_data(&data_command(argument, blocks, true), buffer.as_flattened())
         .map_err(BlockTransferError::Host)?;
     if r1[0] & R1_ERROR_MASK != 0 {
         return Err(BlockTransferError::Status(r1[0]));
@@ -649,9 +815,56 @@ mod tests {
             card_identification: CardIdentification::from_sd_register(&[0; 4]),
             blocks,
             block_addressed,
-            bus_width: 4,
+            bus_width: BusWidth::Four,
             clock_hertz: TRANSFER_HERTZ,
         }
+    }
+
+    /// Each getter reads its own field, so no two are crossed and none reads a constant.
+    #[test]
+    fn a_card_reads_back_each_value_it_holds() {
+        let card = Card {
+            kind: CardKind::MultimediaCard,
+            relative_card_address: 0x1234,
+            operation_conditions: 0xc0ff_8080,
+            card_identification_raw: [1, 2, 3, 4],
+            card_specific_data_raw: [5, 6, 7, 8],
+            card_identification: CardIdentification::from_sd_register(&[0, 0, 0, 0x1b00_0000]),
+            blocks: 0x0123_4567_89ab,
+            block_addressed: true,
+            bus_width: BusWidth::Four,
+            clock_hertz: 24_000_000,
+        };
+        assert_eq!(card.kind(), CardKind::MultimediaCard);
+        assert_eq!(card.relative_card_address(), 0x1234);
+        assert_eq!(card.operation_conditions(), 0xc0ff_8080);
+        assert_eq!(card.card_identification_raw(), [1, 2, 3, 4]);
+        assert_eq!(card.card_specific_data_raw(), [5, 6, 7, 8]);
+        assert_eq!(card.card_identification().manufacturer, 0x1b);
+        assert_eq!(card.blocks(), 0x0123_4567_89ab);
+        assert!(card.is_block_addressed());
+        assert!(
+            !Card {
+                block_addressed: false,
+                ..card
+            }
+            .is_block_addressed()
+        );
+        assert_eq!(card.bus_width(), BusWidth::Four);
+        assert_eq!(card.clock_hertz(), 24_000_000);
+    }
+
+    /// The widths a card bus has round-trip through their line counts, and no other count is one.
+    #[test]
+    fn a_bus_width_is_one_four_or_eight_lines_and_nothing_else() {
+        for width in [BusWidth::One, BusWidth::Four, BusWidth::Eight] {
+            assert_eq!(BusWidth::from_lines(width.lines()), Some(width));
+        }
+        assert_eq!(BusWidth::Eight.lines(), 8);
+        for lines in [0, 2, 3, 5, 7, 9, 16, u8::MAX] {
+            assert_eq!(BusWidth::from_lines(lines), None);
+        }
+        assert!(BusWidth::One < BusWidth::Four && BusWidth::Four < BusWidth::Eight);
     }
 
     #[test]
@@ -662,22 +875,16 @@ mod tests {
     }
 
     /// One command moves at most `u32::MAX / 512` blocks, because `BYTCNT` is a 32-bit byte count.
-    /// `check` is given lengths it is never handed a buffer of, so nothing is allocated.
+    /// `check` is given block counts it is never handed a buffer of, so nothing is allocated.
     #[test]
     fn one_command_moves_no_more_blocks_than_a_32_bit_byte_count_holds() {
         let huge = card(1 << 40, true);
         let most = (u32::MAX / BLOCK_BYTES as u32) as usize;
         assert_eq!(most, 8_388_607);
-        assert_eq!(check(most * BLOCK_BYTES, &huge, 0), Ok((most as u32, 0)));
-        assert_eq!(
-            check((most + 1) * BLOCK_BYTES, &huge, 0),
-            Err(BlockTransferError::Range)
-        );
-        assert_eq!(
-            check((most + 2) * BLOCK_BYTES, &huge, 0),
-            Err(BlockTransferError::Range)
-        );
-        assert_eq!(check(512 * BLOCK_BYTES, &huge, 0), Ok((512, 0)));
+        assert_eq!(check(most, &huge, 0), Ok((most as u32, 0)));
+        assert_eq!(check(most + 1, &huge, 0), Err(BlockTransferError::Range));
+        assert_eq!(check(most + 2, &huge, 0), Err(BlockTransferError::Range));
+        assert_eq!(check(512, &huge, 0), Ok((512, 0)));
     }
 
     /// The argument is the block on a block-addressed card and its first byte on a byte-addressed
@@ -702,9 +909,6 @@ mod tests {
         assert_eq!(bytes.block_address_argument(last + 1), None);
         assert_eq!(bytes.block_address_argument(1 << 55), None);
         assert_eq!(bytes.block_address_argument(u64::MAX), None);
-        assert_eq!(
-            check(BLOCK_BYTES, &bytes, last + 1),
-            Err(BlockTransferError::Range)
-        );
+        assert_eq!(check(1, &bytes, last + 1), Err(BlockTransferError::Range));
     }
 }

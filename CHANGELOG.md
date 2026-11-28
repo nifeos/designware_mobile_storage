@@ -3,6 +3,31 @@
 Dates are UTC. One line per release, what changed and why, so a reader of the diff has the
 sentence beside it.
 
+## Unreleased
+
+- Breaking: `sd::Card` and `host_controller::Identity` keep their fields to the crate and give
+  each one a getter of the same name (`card.blocks()`, `identity.card_detect()`), and
+  `Card::is_block_addressed` reads the addressing. Only the driver makes either, so a `Card`
+  handed to `read_blocks` always names a card that the driver brought up.
+  `command::Data`, `command::Command` and `card::CardIdentification` are `#[non_exhaustive]` with
+  their fields still readable, and `Data::new` builds a data phase.
+- Breaking: `sd::read_blocks` and `sd::write_blocks` take slices of blocks, `&mut [[u8; 512]]`
+  and `&[[u8; 512]]`, so a caller cannot pass a partial block. `BlockTransferError::Length` is
+  gone, and an empty buffer gets `Range`. A caller with bytes uses `as_chunks_mut`.
+- Breaking: the bus width is `sd::BusWidth` (`One`, `Four`, `Eight`), taken by `identify` and
+  reported by `Card::bus_width`, in place of a bare `u8` that accepted any number.
+  `BusWidth::from_lines` reads a device tree's `bus-width`.
+- Breaking: `command::Response` is `#[non_exhaustive]`, so a later release may add the responses
+  of a Secure Digital Input Output (SDIO) card; a `match` on it needs a wildcard arm.
+- Breaking: the crate is `no_std` with the `simulator` feature on too; only the simulator links
+  `std`.
+- `HostController::new_returning_window` hands the register window back with the error when it
+  refuses the controller, so a caller can try again or report on it.
+- `HostController` and `InternalDirectMemoryAccess` implement `Debug`, and their declarations no
+  longer bound their type parameters.
+- Each module has an example that runs against the simulator, the engine path among them.
+- The manifest names its documentation, and the README counts twenty-two proof harnesses.
+
 ## 0.1.0-pre.3
 
 - Breaking: the `jh7110` module and its `slot_from_node` fuzz target are gone. The crate names no

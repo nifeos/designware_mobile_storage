@@ -700,6 +700,15 @@ fn adversarial_direct_memory_access_host()
     host.with_internal_direct_memory_access(engine)
 }
 
+/// Any slot's widest bus.
+fn any_bus_width() -> crate::sd::BusWidth {
+    match kani::any::<u8>() % 3 {
+        0 => crate::sd::BusWidth::One,
+        1 => crate::sd::BusWidth::Four,
+        _ => crate::sd::BusWidth::Eight,
+    }
+}
+
 /// A card of any size and addressing, as `identify` might have left it.
 fn any_card() -> crate::sd::Card {
     crate::sd::Card {
@@ -711,7 +720,7 @@ fn any_card() -> crate::sd::Card {
         card_identification: crate::card::CardIdentification::from_sd_register(&[0; 4]),
         blocks: kani::any(),
         block_addressed: kani::any(),
-        bus_width: 4,
+        bus_width: crate::sd::BusWidth::Four,
         clock_hertz: crate::sd::TRANSFER_HERTZ,
     }
 }
@@ -726,7 +735,7 @@ fn any_card() -> crate::sd::Card {
 fn reading_a_block_never_writes_the_card_or_leaves_the_region() {
     let mut host = adversarial_direct_memory_access_host();
     let card = any_card();
-    let mut buffer = [0u8; crate::sd::BLOCK_BYTES];
+    let mut buffer = [[0u8; crate::sd::BLOCK_BYTES]; 1];
     let _ = crate::sd::read_blocks(&mut host, &card, kani::any(), &mut buffer);
     assert!(host.registers_mut().write_commands == 0);
 }
@@ -743,7 +752,7 @@ fn writing_a_block_sends_only_the_block_asked_for() {
     let mut host = adversarial_direct_memory_access_host();
     let card = any_card();
     let logical_block_address: u64 = kani::any();
-    let buffer = [0u8; crate::sd::BLOCK_BYTES];
+    let buffer = [[0u8; crate::sd::BLOCK_BYTES]; 1];
     let _ = crate::sd::write_blocks(&mut host, &card, logical_block_address, &buffer);
     let window = host.registers_mut();
     assert!(window.write_commands <= 1);
@@ -810,7 +819,9 @@ fn configuring_a_card_is_total_against_any_controller() {
     let _ = crate::card::CardIdentification::from_sd_register(&card_identification);
     let _ = crate::card::CardIdentification::multimedia_card(&card_identification);
     if kani::any() {
-        if crate::sd::configure_sd(&mut host, &mut card, &card_specific_data, kani::any()).is_ok() {
+        if crate::sd::configure_sd(&mut host, &mut card, &card_specific_data, any_bus_width())
+            .is_ok()
+        {
             assert!(card.blocks > 0);
             assert!(card.clock_hertz <= crate::sd::TRANSFER_HERTZ);
         }
@@ -1258,7 +1269,7 @@ fn modeled_card_host() -> HostController<ModeledCard, ClosedRegion> {
 #[kani::unwind(7)]
 fn each_bring_up_command_goes_to_a_card_state_that_accepts_it() {
     let mut host = modeled_card_host();
-    let _ = crate::sd::identify(&mut host, kani::any());
+    let _ = crate::sd::identify(&mut host, any_bus_width());
     let card = host.registers_mut();
     assert!(card.illegal_commands == 0);
     assert!(card.write_commands == 0);
@@ -1277,7 +1288,7 @@ fn each_bring_up_command_goes_to_a_card_state_that_accepts_it() {
 #[kani::unwind(7)]
 fn a_card_is_brought_up_only_through_every_step() {
     let mut host = modeled_card_host();
-    let maximum_bus_width: u8 = kani::any();
+    let maximum_bus_width = any_bus_width();
     let result = crate::sd::identify(&mut host, maximum_bus_width);
     let model = host.registers_mut();
     if let Ok(card) = result {
@@ -1286,13 +1297,20 @@ fn a_card_is_brought_up_only_through_every_step() {
         assert!(card.relative_card_address == model.relative_card_address);
         assert!(card.operation_conditions == model.ready_operation_conditions);
         assert!((card.kind == crate::sd::CardKind::MultimediaCard) == model.multimedia_card);
-        assert!(card.bus_width == model.card_bus_width);
+        assert!(card.bus_width.lines() == model.card_bus_width);
         if model.multimedia_card {
             assert!(model.extended_card_specific_data_read);
-            assert!(card.bus_width == 1);
+            assert!(card.bus_width == crate::sd::BusWidth::One);
         } else {
             assert!(model.block_bytes_set);
-            assert!(card.bus_width == if maximum_bus_width >= 4 { 4 } else { 1 });
+            assert!(
+                card.bus_width
+                    == if maximum_bus_width >= crate::sd::BusWidth::Four {
+                        crate::sd::BusWidth::Four
+                    } else {
+                        crate::sd::BusWidth::One
+                    }
+            );
         }
         assert!(
             model.clock_divider
@@ -1316,7 +1334,7 @@ fn a_card_is_brought_up_only_through_every_step() {
 fn a_bring_up_starts_over_from_whatever_a_failed_one_left() {
     let mut host = modeled_card_host();
     let initial_controller_bus_width = host.registers_mut().controller_bus_width;
-    let result = crate::sd::identify(&mut host, kani::any());
+    let result = crate::sd::identify(&mut host, any_bus_width());
     let model = host.registers_mut();
     if let Some(first) = model.first_command {
         assert!(first.index == crate::command::GO_IDLE_STATE);
@@ -1330,8 +1348,8 @@ fn a_bring_up_starts_over_from_whatever_a_failed_one_left() {
         );
     }
     if let Ok(card) = result {
-        assert!(model.controller_bus_width == card.bus_width);
-        assert!(model.card_bus_width == card.bus_width);
+        assert!(model.controller_bus_width == card.bus_width.lines());
+        assert!(model.card_bus_width == card.bus_width.lines());
     }
     kani::cover!(result.is_ok() && initial_controller_bus_width != 1);
 }

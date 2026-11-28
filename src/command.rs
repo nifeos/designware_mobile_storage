@@ -13,6 +13,31 @@
 //! is public, so a caller composes the commands this driver does not send itself with
 //! [`Command::new`] or [`Command::with_data`] and sends them through
 //! [`crate::host_controller::HostController`].
+//!
+//! # Example
+//!
+//! A single-block read composed as [`read_blocks`](crate::sd::read_blocks) composes it, sent to
+//! the simulator the `simulator` feature turns on:
+//! ```
+//! # #[cfg(not(feature = "simulator"))] fn main() {}
+//! # #[cfg(feature = "simulator")] fn main() {
+//! use designware_mobile_storage::SimulatedHostController;
+//! use designware_mobile_storage::command::{Command, Data, READ_SINGLE_BLOCK, Response};
+//! use designware_mobile_storage::host_controller::HostController;
+//! use designware_mobile_storage::sd::{self, BLOCK_BYTES, BusWidth, CardKind};
+//!
+//! let mut registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+//! registers.card_blocks_mut()[9] = [0xa5; BLOCK_BYTES];
+//! let (mut host, _identity) = HostController::new(registers, 50_000_000, None).unwrap();
+//! let card = sd::identify(&mut host, BusWidth::Four).unwrap();
+//! let argument = card.block_address_argument(9).unwrap();
+//! let data = Data::new(BLOCK_BYTES as u32, 1, false);
+//! let read = Command::with_data(READ_SINGLE_BLOCK, argument, Response::R1, data);
+//! let mut block = [0; BLOCK_BYTES];
+//! host.read_data(&read, &mut block).unwrap();
+//! assert_eq!(block, [0xa5; BLOCK_BYTES]);
+//! # }
+//! ```
 
 use crate::registers;
 
@@ -96,7 +121,11 @@ pub const SET_BUS_WIDTH: u8 = 6;
 pub const SD_SEND_OPERATION_CONDITIONS: u8 = 41;
 
 /// What comes back from the card, and so how the controller must be told to listen.
+///
+/// The kinds a memory card answers with. A later release may add others, such as the R4 and R5
+/// of a Secure Digital Input Output (SDIO) card, so a `match` on it needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Response {
     /// No response (`CMD0`): nothing comes back.
     None,
@@ -141,7 +170,11 @@ impl Response {
 }
 
 /// A data phase: how many blocks of how many bytes, and which way.
+///
+/// [`Data::new`] makes one. A later release may add a field, so a caller builds one only through
+/// it; the fields stay readable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Data {
     /// Bytes per block, the `BLKSIZ` value. 512 for every block transfer this driver makes.
     #[doc(alias = "block size")]
@@ -153,6 +186,25 @@ pub struct Data {
 }
 
 impl Data {
+    /// **A data phase** of `blocks` blocks of `block_bytes` bytes each, written to the card when
+    /// `is_write` is true and read from it otherwise.
+    ///
+    /// ```
+    /// use designware_mobile_storage::command::{Command, Data, READ_SINGLE_BLOCK, Response};
+    ///
+    /// // Block 8 of a block-addressed card.
+    /// let read = Command::with_data(READ_SINGLE_BLOCK, 8, Response::R1, Data::new(512, 1, false));
+    /// assert_eq!(read.data.map(|data| data.blocks), Some(1));
+    /// ```
+    #[must_use]
+    pub const fn new(block_bytes: u32, blocks: u32, is_write: bool) -> Self {
+        Data {
+            block_bytes,
+            blocks,
+            is_write,
+        }
+    }
+
     /// Total bytes, the `BYTCNT` value. Saturating, so a hostile count cannot wrap into a small
     /// transfer; a caller asking for four gigabytes in one command is refused by [`crate::host_controller`]'s
     /// buffer check before this is ever written.
@@ -163,7 +215,11 @@ impl Data {
 }
 
 /// One command to the card.
+///
+/// [`Command::new`] and [`Command::with_data`] make one. A later release may add a field, so a
+/// caller builds one only through them; the fields stay readable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Command {
     /// The command index, 0 to 63.
     pub index: u8,
@@ -304,11 +360,8 @@ mod tests {
 
     #[test]
     fn only_a_multi_block_transfer_asks_for_the_automatic_stop() {
-        let one = Data {
-            block_bytes: 512,
-            blocks: 1,
-            is_write: false,
-        };
+        let one = Data::new(512, 1, false);
+        assert_eq!((one.block_bytes, one.blocks, one.is_write), (512, 1, false));
         let many = Data { blocks: 8, ..one };
         let r1 = Command::with_data(READ_SINGLE_BLOCK, 0, Response::R1, one).register_word();
         let r8 = Command::with_data(READ_MULTIPLE_BLOCK, 0, Response::R1, many).register_word();

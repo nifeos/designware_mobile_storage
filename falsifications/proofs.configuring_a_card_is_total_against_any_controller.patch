@@ -7,13 +7,13 @@ Expected to fail: `assert!(card.blocks > 0)`.
 diff --git a/src/sd.rs b/src/sd.rs
 --- a/src/sd.rs
 +++ b/src/sd.rs
-@@ -371,9 +371,6 @@
-     maximum_bus_width: u8,
+@@ -532,9 +532,6 @@
+     maximum_bus_width: BusWidth,
  ) -> Result<(), InitializationError> {
      let card_specific_data = CardSpecificData::from_sd_register(card_specific_data_raw);
 -    if card_specific_data.blocks == 0 {
 -        return Err(InitializationError::Capacity(card_specific_data.structure));
 -    }
      card.blocks = card_specific_data.blocks;
-     if maximum_bus_width >= 4 {
+     if maximum_bus_width >= BusWidth::Four {
          application_command(host, card)?;

@@ -6,17 +6,17 @@ rust-version = "1.88"
 description = "Synopsys DesignWare Mobile Storage Host (dw-mshc) SD and eMMC driver logic behind one small trait, proven with Kani"
 license = "(MIT OR Apache-2.0) AND ISC"
 repository = "https://github.com/partsfoundry/designware_mobile_storage"
+documentation = "https://docs.rs/designware_mobile_storage"
 readme = "README.md"
 keywords = ["no-std", "kani", "driver", "sd-card", "emmc"]
 categories = ["no-std", "embedded", "hardware-support"]
 publish = false     # publishing is held; the pull request that clears a first release removes this
 
-# no_std for a kernel, std for host tests. It is the whole SD and eMMC driver for the Synopsys
+# no_std, with std linked only for the simulator and the tests. It is the whole SD and eMMC driver for the Synopsys
 # DesignWare Mobile Storage Host Controller: the register map, the command encoding, the polled
 # controller sequences behind one small `RegisterWindowAndClock` trait, card identification and
-# block I/O, the card registers' decoding, and the MBR rule for where a write test may land. It knows
-# no system-on-chip. Host-tested against a simulated controller and card; nothing here dereferences
-# a pointer.
+# block I/O, and the card registers' decoding. It knows no system-on-chip. Host-tested against a
+# simulated controller and card; nothing here dereferences a pointer.
 
 # No dependencies: the device-tree walk and the process layout around this driver are the
 # caller's.
@@ -24,7 +24,8 @@ publish = false     # publishing is held; the pull request that clears a first r
 [features]
 # Off by default. Exports `SimulatedHostController`, the simulated controller and card the crate's
 # own tests run against, so a program that drives this crate can run its tests against it too. It
-# needs `std`, so the crate is `no_std` only without it.
+# needs `std`, which it links for the simulator alone: the driver's modules stay `no_std` with the
+# feature on, so the feature builds for a host and never for a bare-metal target.
 simulator = []
 
 [[test]]

@@ -7,6 +7,36 @@
 //!
 //! Nothing here can fail on hostile input. A card is a device on the far side of a bus and its
 //! registers are data, so every decoder is total and every capacity is computed without overflow.
+//!
+//! # Example
+//!
+//! Name the card [`identify`](crate::sd::identify) brought up, and ask whether it is ready for
+//! data: `CMD13` answers with the R1 status word, whose error bits [`R1_ERROR_MASK`] covers. The
+//! simulator the `simulator` feature turns on stands in for the controller.
+//!
+//! ```
+//! # #[cfg(not(feature = "simulator"))] fn main() {}
+//! # #[cfg(feature = "simulator")] fn main() {
+//! use designware_mobile_storage::SimulatedHostController;
+//! use designware_mobile_storage::card::{R1_ERROR_MASK, R1_READY_FOR_DATA};
+//! use designware_mobile_storage::command::{Command, Response, SEND_STATUS};
+//! use designware_mobile_storage::host_controller::HostController;
+//! use designware_mobile_storage::sd::{self, BusWidth, CardKind};
+//!
+//! let registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+//! let (mut host, _identity) = HostController::new(registers, 50_000_000, None).unwrap();
+//! let card = sd::identify(&mut host, BusWidth::Four).unwrap();
+//! println!("manufacturer {:#04x}", card.card_identification().manufacturer);
+//!
+//! // The relative card address goes in the argument's upper half.
+//! let argument = u32::from(card.relative_card_address()) << 16;
+//! let status = host
+//!     .send_command(&Command::new(SEND_STATUS, argument, Response::R1))
+//!     .unwrap()[0];
+//! assert_eq!(status & R1_ERROR_MASK, 0);
+//! assert_ne!(status & R1_READY_FOR_DATA, 0);
+//! # }
+//! ```
 
 /// The operation conditions register's (OCR) power-up-complete bit: clear while the card is still
 /// busy initializing.
@@ -128,8 +158,12 @@ impl CardSpecificData {
 
 /// **The card identification register (CID)**, decoded to what a transcript should name: SD
 /// Physical Layer Simplified Specification section 5.2, `JESD84-B51` section 7.2 for eMMC.
+///
+/// A later release may decode more of the register, such as the manufacturing date, so the struct
+/// is not built outside this crate; its fields stay readable.
 #[doc(alias = "cid")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CardIdentification {
     /// Manufacturer identifier, bits 127:120.
     pub manufacturer: u8,

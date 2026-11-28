@@ -1,4 +1,4 @@
-#![cfg_attr(not(any(test, feature = "simulator")), no_std)]
+#![no_std]
 #![doc = include_str!("../README.md")]
 
 // Adapted from OpenBSD's `sys/dev/fdt/dwmmc.c` revision 1.33 (register map, reset, clock, bus
@@ -25,6 +25,11 @@
 // WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 // ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+// The driver is `no_std` whatever the features: only the simulation needs `std`, and it names it
+// itself, so a use of `std` in a driver module fails to build with the feature on as without it.
+#[cfg(any(test, feature = "simulator"))]
+extern crate std;
 
 pub mod card;
 pub mod command;

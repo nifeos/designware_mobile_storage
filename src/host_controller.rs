@@ -8,6 +8,34 @@
 //! [`HostController::with_internal_direct_memory_access`], hands each data phase to the controller's DMA
 //! engine ([`crate::internal_direct_memory_access`]). Commands and identification are the same on
 //! both.
+//!
+//! # Example
+//!
+//! Take the controller, see what it is, and check the slot. The example runs against the crate's
+//! simulator, which the `simulator` feature turns on; on a board the register window is the
+//! controller's own.
+//!
+//! ```
+//! # #[cfg(not(feature = "simulator"))] fn main() {}
+//! # #[cfg(feature = "simulator")] fn main() {
+//! use designware_mobile_storage::SimulatedHostController;
+//! use designware_mobile_storage::host_controller::{Deadlines, HostController};
+//! use designware_mobile_storage::sd::CardKind;
+//!
+//! let registers = SimulatedHostController::new(CardKind::SdHighCapacity, 8192);
+//! // A 50 megahertz base clock, and the FIFO depth read from the controller.
+//! let (mut host, identity) = HostController::new(registers, 50_000_000, None).unwrap();
+//! assert_eq!(identity.card_detect() & 1, 0, "bit 0 clear: a card is present");
+//! assert!(host.is_card_present());
+//! // A slow card may take longer to answer than the defaults allow.
+//! let mut deadlines = Deadlines::default();
+//! deadlines.busy_microseconds = 2_000_000;
+//! host.set_deadlines(deadlines);
+//! host.reset().unwrap();
+//! let card_hertz = host.set_clock(400_000).unwrap();
+//! assert!(card_hertz <= 400_000);
+//! # }
+//! ```
 
 use crate::command::{Command, Response, STOP_TRANSMISSION, UPDATE_CLOCK};
 use crate::internal_direct_memory_access::{
@@ -114,38 +142,103 @@ impl core::fmt::Display for Error {
 impl core::error::Error for Error {}
 
 /// The controller's identity, read before anything is written: what a board transcript prints.
+///
+/// Only [`HostController::new`] makes one, from the registers it read; a caller reads its values
+/// through the methods named after them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Identity {
     /// `VERID`, the version identification.
+    pub(crate) version_identification: u32,
+    /// `HCON`, the hardware configuration.
+    pub(crate) hardware_configuration: u32,
+    /// `USRID`, the user identification.
+    pub(crate) user_identification: u32,
+    /// `FIFOTH` as found, whose receive watermark is `depth - 1` out of reset.
+    pub(crate) queue_threshold: u32,
+    /// `CDETECT` as found: bit 0 clear means a card is present.
+    pub(crate) card_detect: u32,
+    /// `SDMMC_CTRL` in OpenBSD and FreeBSD, the control register, as the firmware left it.
+    pub(crate) host_control: u32,
+    /// `SDMMC_PWREN` in OpenBSD and FreeBSD, the power enable register, as the firmware left it.
+    pub(crate) power_enable: u32,
+    /// `SDMMC_CLKDIV` in OpenBSD and FreeBSD, the clock divider register, as the firmware left it.
+    pub(crate) clock_divider: u32,
+    /// `SDMMC_CLKENA` in OpenBSD and FreeBSD, the clock enable register, as the firmware left it.
+    pub(crate) clock_enable: u32,
+    /// `SDMMC_CTYPE` in OpenBSD and FreeBSD, the card type register, as the firmware left it.
+    pub(crate) card_type: u32,
+}
+
+impl Identity {
+    /// `VERID`, the version identification.
     #[doc(alias = "verid")]
-    pub version_identification: u32,
+    #[must_use]
+    pub const fn version_identification(&self) -> u32 {
+        self.version_identification
+    }
+
     /// `HCON`, the hardware configuration.
     #[doc(alias = "hcon")]
-    pub hardware_configuration: u32,
+    #[must_use]
+    pub const fn hardware_configuration(&self) -> u32 {
+        self.hardware_configuration
+    }
+
     /// `USRID`, the user identification.
     #[doc(alias = "usrid")]
-    pub user_identification: u32,
+    #[must_use]
+    pub const fn user_identification(&self) -> u32 {
+        self.user_identification
+    }
+
     /// `FIFOTH` as found, whose receive watermark is `depth - 1` out of reset.
     #[doc(alias = "fifoth")]
-    pub queue_threshold: u32,
+    #[must_use]
+    pub const fn queue_threshold(&self) -> u32 {
+        self.queue_threshold
+    }
+
     /// `CDETECT` as found: bit 0 clear means a card is present.
     #[doc(alias = "cdetect")]
-    pub card_detect: u32,
+    #[must_use]
+    pub const fn card_detect(&self) -> u32 {
+        self.card_detect
+    }
+
     /// `SDMMC_CTRL` in OpenBSD and FreeBSD, the control register, as the firmware left it.
     #[doc(alias = "CTRL")]
-    pub host_control: u32,
+    #[must_use]
+    pub const fn host_control(&self) -> u32 {
+        self.host_control
+    }
+
     /// `SDMMC_PWREN` in OpenBSD and FreeBSD, the power enable register, as the firmware left it.
     #[doc(alias = "PWREN")]
-    pub power_enable: u32,
+    #[must_use]
+    pub const fn power_enable(&self) -> u32 {
+        self.power_enable
+    }
+
     /// `SDMMC_CLKDIV` in OpenBSD and FreeBSD, the clock divider register, as the firmware left it.
     #[doc(alias = "CLKDIV")]
-    pub clock_divider: u32,
+    #[must_use]
+    pub const fn clock_divider(&self) -> u32 {
+        self.clock_divider
+    }
+
     /// `SDMMC_CLKENA` in OpenBSD and FreeBSD, the clock enable register, as the firmware left it.
     #[doc(alias = "CLKENA")]
-    pub clock_enable: u32,
+    #[must_use]
+    pub const fn clock_enable(&self) -> u32 {
+        self.clock_enable
+    }
+
     /// `SDMMC_CTYPE` in OpenBSD and FreeBSD, the card type register, as the firmware left it.
     #[doc(alias = "CTYPE")]
-    pub card_type: u32,
+    #[must_use]
+    pub const fn card_type(&self) -> u32 {
+        self.card_type
+    }
 }
 
 /// How long a reset, a clock update or a command may take before the driver gives up, by default.
@@ -253,10 +346,7 @@ pub(crate) const fn queue_step(
 /// data moves by DMA, the IDMAC's region. `HostController<R>` is the polled driver;
 /// [`HostController::with_internal_direct_memory_access`] makes a `HostController<R, D>` whose
 /// every data phase goes through the IDMAC.
-pub struct HostController<
-    R: RegisterWindowAndClock,
-    D: DirectMemoryAccessRegion = NoDirectMemoryAccess,
-> {
+pub struct HostController<R, D = NoDirectMemoryAccess> {
     pub(crate) registers: R,
     queue_offset: u32,
     pub(crate) depth: u32,
@@ -264,6 +354,22 @@ pub struct HostController<
     hardware_configuration: u32,
     pub(crate) deadlines: Deadlines,
     pub(crate) direct_memory_access: Option<InternalDirectMemoryAccess<D>>,
+}
+
+/// The controller's state, and whether its data moves through the IDMAC. The register window is
+/// left out: reading a register can change the controller (a read of the FIFO takes a word), and
+/// the window need not implement `Debug`.
+impl<R, D> core::fmt::Debug for HostController<R, D> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("HostController")
+            .field("queue_offset", &self.queue_offset)
+            .field("queue_depth_words", &self.depth)
+            .field("base_hertz", &self.base_hertz)
+            .field("hardware_configuration", &self.hardware_configuration)
+            .field("deadlines", &self.deadlines)
+            .field("direct_memory_access", &self.direct_memory_access)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<R: RegisterWindowAndClock> HostController<R> {
@@ -276,12 +382,30 @@ impl<R: RegisterWindowAndClock> HostController<R> {
     ///
     /// # Errors
     ///
-    /// [`Error::QueueWidth`] for a 16- or 64-bit FIFO.
+    /// [`Error::QueueWidth`] for a 16- or 64-bit FIFO. The window is dropped with the refusal;
+    /// [`HostController::new_returning_window`] hands it back.
     pub fn new(
-        mut registers: R,
+        registers: R,
         base_hertz: u32,
         queue_depth_words: Option<u32>,
     ) -> Result<(Self, Identity), Error> {
+        Self::new_returning_window(registers, base_hertz, queue_depth_words)
+            .map_err(|(error, _)| error)
+    }
+
+    /// **Take a controller, or give the window back**: [`HostController::new`], for a caller whose
+    /// window was costly to make, or who tries another configuration on a refusal. Everything
+    /// `new` does, it does.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::QueueWidth`] for a 16- or 64-bit FIFO, with `registers` as it was passed in. Only
+    /// the identity registers were read, which changes nothing in the controller.
+    pub fn new_returning_window(
+        mut registers: R,
+        base_hertz: u32,
+        queue_depth_words: Option<u32>,
+    ) -> Result<(Self, Identity), (Error, R)> {
         let id = Identity {
             version_identification: registers.read(registers::VERSION_IDENTIFICATION_REGISTER),
             hardware_configuration: registers.read(registers::HARDWARE_CONFIGURATION_REGISTER),
@@ -295,7 +419,10 @@ impl<R: RegisterWindowAndClock> HostController<R> {
             card_type: registers.read(registers::CARD_TYPE_REGISTER),
         };
         if registers::queue_width_bytes(id.hardware_configuration) != Some(4) {
-            return Err(Error::QueueWidth((id.hardware_configuration >> 7) & 7));
+            return Err((
+                Error::QueueWidth((id.hardware_configuration >> 7) & 7),
+                registers,
+            ));
         }
         let depth = match queue_depth_words {
             Some(d) if d > 0 => d,
@@ -844,7 +971,53 @@ fn data_phase_failure(index: u8, raw_interrupt_status: u32, owed: u32) -> Result
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
+
+    /// Each getter reads its own register, so no two are crossed and none reads a constant.
+    #[test]
+    fn an_identity_reads_back_each_register_it_holds() {
+        let identity = Identity {
+            version_identification: 0x5342_270a,
+            hardware_configuration: 0x0c4c_4c81,
+            user_identification: 0x0700_0003,
+            queue_threshold: 0x0020_0010,
+            card_detect: 0x0000_0002,
+            host_control: 0x0200_0010,
+            power_enable: 0x0000_0003,
+            clock_divider: 0x0000_003f,
+            clock_enable: 0x0001_0001,
+            card_type: 0x0001_0000,
+        };
+        let read = [
+            identity.version_identification(),
+            identity.hardware_configuration(),
+            identity.user_identification(),
+            identity.queue_threshold(),
+            identity.card_detect(),
+            identity.host_control(),
+            identity.power_enable(),
+            identity.clock_divider(),
+            identity.clock_enable(),
+            identity.card_type(),
+        ];
+        assert_eq!(
+            read,
+            [
+                0x5342_270a,
+                0x0c4c_4c81,
+                0x0700_0003,
+                0x0020_0010,
+                0x0000_0002,
+                0x0200_0010,
+                0x0000_0003,
+                0x0000_003f,
+                0x0001_0001,
+                0x0001_0000,
+            ]
+        );
+    }
 
     /// The `VisionFive` 2's controllers run from 50 megahertz (`assigned-clock-rates` in mainline
     /// and the vendor branch head).
@@ -1134,10 +1307,10 @@ mod tests {
             32,
         ));
         h.registers_mut().write(registers::CONTROL_REGISTER, 1 << 8);
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().writes.clear();
         let mut block = [0u8; 512];
-        sd::read_blocks(&mut h, &card, 1, &mut block).unwrap();
+        sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0).unwrap();
         let read = core::mem::take(&mut h.registers_mut().writes);
         assert!(
             !read
@@ -1148,7 +1321,7 @@ mod tests {
             registers::CONTROL_REGISTER,
             1 << 8 | registers::CONTROL_QUEUE_RESET
         )));
-        sd::write_blocks(&mut h, &card, 1, &block).unwrap();
+        sd::write_blocks(&mut h, &card, 1, block.as_chunks().0).unwrap();
         let write = &h.registers_mut().writes;
         assert!(
             !write
@@ -1162,7 +1335,7 @@ mod tests {
         // A FIFO reset that never clears stops the command before it is sent.
         h.registers_mut().reset_stuck = true;
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::ResetStuck(_)))
         ));
     }
@@ -1177,12 +1350,12 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut()
             .write(registers::CONTROL_REGISTER, registers::CONTROL_QUEUE_RESET);
         h.registers_mut().writes.clear();
         let mut block = [0u8; 512];
-        sd::read_blocks(&mut h, &card, 1, &mut block).unwrap();
+        sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0).unwrap();
         let read = &h.registers_mut().writes;
         assert!(read.contains(&(registers::CONTROL_REGISTER, registers::CONTROL_QUEUE_RESET)));
     }
@@ -1223,11 +1396,11 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().stall_after = Some(128);
         let mut block = [0u8; 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::DataTimeout(17, _, 384)))
         ));
         let mut h = take(SimulatedHostController::new(
@@ -1235,10 +1408,10 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().stall_after = Some(128);
         assert!(matches!(
-            sd::write_blocks(&mut h, &card, 1, &block),
+            sd::write_blocks(&mut h, &card, 1, block.as_chunks().0),
             Err(BlockTransferError::Host(Error::DataTimeout(24, _, 256)))
         ));
     }
@@ -1256,12 +1429,12 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().stall_after = Some(128);
         h.registers_mut().end_early = true;
         let r = within_ten_seconds(move || {
             let mut block = [0u8; 512];
-            sd::read_blocks(&mut h, &card, 1, &mut block)
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0)
         });
         assert!(matches!(
             r,
@@ -1279,12 +1452,12 @@ mod tests {
             2048,
             48,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         let data: Vec<u8> = (0..512).map(|i| (i % 253) as u8).collect();
-        sd::write_blocks(&mut h, &card, 5, &data).unwrap();
+        sd::write_blocks(&mut h, &card, 5, data.as_chunks().0).unwrap();
         h.registers_mut().overreport_fill = true;
         let mut back = [0u8; 512];
-        sd::read_blocks(&mut h, &card, 5, &mut back).unwrap();
+        sd::read_blocks(&mut h, &card, 5, back.as_chunks_mut().0).unwrap();
         assert_eq!(back[..], data[..]);
     }
 
@@ -1299,9 +1472,9 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().writes.clear();
-        sd::write_blocks(&mut h, &card, 1, &[0xa5; 1024]).unwrap();
+        sd::write_blocks(&mut h, &card, 1, ([0xa5; 1024]).as_chunks().0).unwrap();
         // The FIFO's own writes are not recorded, so what follows the data command, up to the
         // next command's clearing, is one clearing per batch: 256 words in batches of the depth.
         let writes = &h.registers_mut().writes;
@@ -1337,12 +1510,12 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().stall_after = Some(128);
         h.registers_mut().overreport_fill = true;
         let mut block = [0u8; 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::DataTimeout(17, _, 384)))
         ));
     }
@@ -1356,11 +1529,11 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().crc_error_at_end = true;
         let start = h.registers_mut().now_microseconds();
         assert!(matches!(
-            sd::write_blocks(&mut h, &card, 1, &[0u8; 512]),
+            sd::write_blocks(&mut h, &card, 1, ([0u8; 512]).as_chunks().0),
             Err(BlockTransferError::Host(Error::Data(24, raw_interrupt_status))) if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_CRC_ERROR != 0
         ));
         assert!(h.registers_mut().now_microseconds() - start < DATA_DEADLINE_MICROSECONDS);
@@ -1374,12 +1547,12 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().fail_next_read_crc = true;
         let start = h.registers_mut().now_microseconds();
         let mut block = [0u8; 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::Data(17, _)))
         ));
         assert!(h.registers_mut().now_microseconds() - start < DATA_DEADLINE_MICROSECONDS);
@@ -1393,10 +1566,10 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().late_automatic_command_done = 5;
         let mut blocks = [0u8; 4 * 512];
-        sd::read_blocks(&mut h, &card, 1, &mut blocks).unwrap();
+        sd::read_blocks(&mut h, &card, 1, blocks.as_chunks_mut().0).unwrap();
         assert_ne!(
             h.registers_mut()
                 .peek(registers::RAW_INTERRUPT_STATUS_REGISTER)
@@ -1525,12 +1698,12 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().fail_next_read_timeout = true;
         let start = h.registers_mut().now_microseconds();
         let mut block = [0u8; 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 1, &mut block),
+            sd::read_blocks(&mut h, &card, 1, block.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::DataTimeout(17, raw_interrupt_status, 512)))
                 if raw_interrupt_status & registers::RAW_INTERRUPT_DATA_READ_TIMEOUT != 0
         ));
@@ -1548,23 +1721,23 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().storage[9][0] = 0x5a;
         h.registers_mut().fail_next_read_crc = true;
         h.registers_mut().commands.clear();
         let mut blocks = [0u8; 4 * 512];
         assert!(matches!(
-            sd::read_blocks(&mut h, &card, 8, &mut blocks),
+            sd::read_blocks(&mut h, &card, 8, blocks.as_chunks_mut().0),
             Err(BlockTransferError::Host(Error::Data(18, _)))
         ));
         assert_eq!(h.registers_mut().commands, [(18, 8), (12, 0)]);
-        sd::read_blocks(&mut h, &card, 8, &mut blocks).unwrap();
+        sd::read_blocks(&mut h, &card, 8, blocks.as_chunks_mut().0).unwrap();
         assert_eq!(blocks[512], 0x5a);
 
         h.registers_mut().fail_next_read_crc = true;
         h.registers_mut().commands.clear();
         let mut block = [0u8; 512];
-        assert!(sd::read_blocks(&mut h, &card, 8, &mut block).is_err());
+        assert!(sd::read_blocks(&mut h, &card, 8, block.as_chunks_mut().0).is_err());
         assert_eq!(h.registers_mut().commands, [(17, 8)]);
     }
 
@@ -1577,17 +1750,17 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().crc_error_at_end = true;
         h.registers_mut().commands.clear();
         let data = [0xa5u8; 2 * 512];
         assert!(matches!(
-            sd::write_blocks(&mut h, &card, 4, &data),
+            sd::write_blocks(&mut h, &card, 4, data.as_chunks().0),
             Err(BlockTransferError::Host(Error::Data(25, _)))
         ));
         assert_eq!(h.registers_mut().commands, [(25, 4), (12, 0)]);
         h.registers_mut().crc_error_at_end = false;
-        sd::write_blocks(&mut h, &card, 4, &data).unwrap();
+        sd::write_blocks(&mut h, &card, 4, data.as_chunks().0).unwrap();
         assert_eq!(h.registers_mut().storage[5][0], 0xa5);
     }
 
@@ -1600,10 +1773,10 @@ mod tests {
             2048,
             32,
         ));
-        let card = sd::identify(&mut h, 4).unwrap();
+        let card = sd::identify(&mut h, sd::BusWidth::Four).unwrap();
         h.registers_mut().commands.clear();
         let mut blocks = [0u8; 2 * 512];
-        sd::read_blocks(&mut h, &card, 1, &mut blocks).unwrap();
+        sd::read_blocks(&mut h, &card, 1, blocks.as_chunks_mut().0).unwrap();
         assert_eq!(h.registers_mut().commands, [(18, 1), (12, 0)]);
     }
 }
