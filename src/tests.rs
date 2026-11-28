@@ -387,6 +387,25 @@ fn without_a_tree_depth_the_queue_depth_is_read_from_its_reset_watermark() {
     assert_eq!(h.depth, 16);
 }
 
+/// A depth the device tree gives wins over the watermark, and a depth of zero, which no queue
+/// has, falls back to the watermark.
+#[test]
+fn a_tree_depth_wins_over_the_watermark_unless_it_is_zero() {
+    let take = |depth| {
+        HostController::new(
+            SimulatedHostController::new(CardKind::SdHighCapacity, 1024, 16),
+            50_000_000,
+            depth,
+        )
+        .unwrap()
+        .0
+        .depth
+    };
+    assert_eq!(take(Some(1)), 1);
+    assert_eq!(take(Some(64)), 64);
+    assert_eq!(take(Some(0)), 16);
+}
+
 // **The error paths.** Each test below injects one fault the sim can produce and checks that
 // the driver names the step it happened at, because a board transcript that stops is only as
 // useful as what its last line says.
